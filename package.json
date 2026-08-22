@@ -1,0 +1,20 @@
+{
+  "name": "calendar-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "mobile": "npm --workspace=apps/mobile start",
+    "mobile:android": "npm --workspace=apps/mobile run android",
+    "mobile:ios": "npm --workspace=apps/mobile run ios",
+    "mobile:web": "npm --workspace=apps/mobile run web",
+    "build:shared": "npm --workspace=packages/shared run build",
+    "typecheck": "npm --workspace=packages/shared run typecheck && npm --workspace=apps/mobile run typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
