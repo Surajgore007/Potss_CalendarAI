@@ -14,7 +14,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyDH3quqTUCY5uwaoNw3TD_23ZcHDh2Jbx0",
+        "EXPO_PUBLIC_FIREBASE_API_KEY":"",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "calendarai-f5cd0.firebaseapp.com",
         "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "calendarai-f5cd0",
         "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "calendarai-f5cd0.firebasestorage.app",
