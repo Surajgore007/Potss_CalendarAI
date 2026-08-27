@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import {
@@ -7,6 +7,7 @@ import {
   formatFriendlyDate,
   getDaysDifference,
   EVENT_TYPE_CONFIG,
+  THEME_DESIGN,
 } from '@eventpulse/shared';
 
 interface DeadlinesWidgetProps {
@@ -16,17 +17,14 @@ interface DeadlinesWidgetProps {
 export const DeadlinesWidget: React.FC<DeadlinesWidgetProps> = ({ events }) => {
   const router = useRouter();
 
-  // Find events with upcoming (today or future) registration deadlines
   const deadlineItems = useMemo(() => {
     return events
       .filter((e) => {
         if (e.status === 'skipped') return false;
-        // Must have a registration deadline that is today or in the future
         if (!e.registration_deadline) return false;
         return getDaysDifference(e.registration_deadline) >= 0;
       })
       .sort((a, b) => {
-        // Sort by soonest deadline first
         return (a.registration_deadline || '').localeCompare(b.registration_deadline || '');
       })
       .slice(0, 4);
@@ -36,20 +34,27 @@ export const DeadlinesWidget: React.FC<DeadlinesWidgetProps> = ({ events }) => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Active Deadlines</Text>
+        <View style={styles.headerTitleGroup}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="alarm-outline" size={15} color="#F59E0B" />
+          </View>
+          <Text style={styles.title}>Active Deadlines</Text>
+        </View>
+
         <TouchableOpacity
           style={styles.viewAllBtn}
           onPress={() => router.push('/calendar')}
+          activeOpacity={0.75}
         >
-          <Ionicons name="open-outline" size={14} color="#64748B" />
           <Text style={styles.viewAllText}>View all</Text>
+          <Ionicons name="chevron-forward" size={13} color="#F59E0B" />
         </TouchableOpacity>
       </View>
 
-      {/* 2x2 Grid of Deadline Cards */}
-      <View style={styles.grid}>
-        {deadlineItems.length > 0 ? (
-          deadlineItems.map((event) => {
+      {/* Grid of Deadline Cards */}
+      {deadlineItems.length > 0 ? (
+        <View style={styles.grid}>
+          {deadlineItems.map((event) => {
             const daysLeft = getDaysDifference(event.registration_deadline!);
             const isCritical = daysLeft <= 1;
             const isHigh = daysLeft <= 3;
@@ -58,149 +63,171 @@ export const DeadlinesWidget: React.FC<DeadlinesWidgetProps> = ({ events }) => {
             return (
               <TouchableOpacity
                 key={event.id}
-                style={styles.deadlineCard}
-                activeOpacity={0.8}
+                style={[
+                  styles.deadlineCard,
+                  isCritical && styles.criticalBorder,
+                ]}
+                activeOpacity={0.88}
                 onPress={() => router.push(`/event/${event.id}`)}
               >
-                {/* Avatar Icon */}
-                <View style={[styles.avatarCircle, { backgroundColor: conf.accentColor }]}>
-                  <Ionicons name={conf.icon as any} size={16} color="#FFFFFF" />
+                <View style={styles.cardHeader}>
+                  <View
+                    style={[
+                      styles.avatarCircle,
+                      { backgroundColor: conf.badgeBg },
+                    ]}
+                  >
+                    <Ionicons
+                      name={conf.icon as any}
+                      size={14}
+                      color={conf.accentColor}
+                    />
+                  </View>
+
+                  <View
+                    style={[
+                      styles.urgencyPill,
+                      isCritical && styles.urgencyPillCritical,
+                      !isCritical && isHigh && styles.urgencyPillHigh,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.urgencyText,
+                        isCritical && styles.urgencyTextCritical,
+                        !isCritical && isHigh && styles.urgencyTextHigh,
+                      ]}
+                    >
+                      {daysLeft === 0
+                        ? 'DUE TODAY 🚨'
+                        : daysLeft === 1
+                        ? 'TOMORROW ⚠️'
+                        : `IN ${daysLeft} DAYS`}
+                    </Text>
+                  </View>
                 </View>
 
                 <Text style={styles.cardTitle} numberOfLines={1}>
                   {event.title}
                 </Text>
-                <Text style={styles.cardSubtitle} numberOfLines={1}>
-                  {formatFriendlyDate(event.registration_deadline, false)}
-                </Text>
 
-                {/* Urgency Pill */}
-                <View
-                  style={[
-                    styles.urgencyPill,
-                    isCritical && styles.urgencyPillCritical,
-                    !isCritical && isHigh && styles.urgencyPillHigh,
-                  ]}
-                >
-                  <Ionicons
-                    name={isCritical ? 'flame' : isHigh ? 'warning-outline' : 'time-outline'}
-                    size={11}
-                    color={isCritical ? '#DC2626' : isHigh ? '#D97706' : '#64748B'}
-                  />
-                  <Text
-                    style={[
-                      styles.urgencyText,
-                      isCritical && styles.urgencyTextCritical,
-                      !isCritical && isHigh && styles.urgencyTextHigh,
-                    ]}
-                  >
-                    {daysLeft === 0
-                      ? 'Due Today!'
-                      : daysLeft === 1
-                      ? 'Due Tomorrow'
-                      : `${daysLeft}d left`}
+                <View style={styles.dateRow}>
+                  <Ionicons name="calendar-outline" size={11} color="#94A3B8" />
+                  <Text style={styles.cardSubtitle} numberOfLines={1}>
+                    Deadline: {formatFriendlyDate(event.registration_deadline, false)}
                   </Text>
                 </View>
+
+                {event.registration_link && (
+                  <TouchableOpacity
+                    style={styles.applyBtn}
+                    onPress={() => Linking.openURL(event.registration_link!)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.applyBtnText}>Register Now</Text>
+                    <Ionicons name="arrow-forward" size={11} color="#4F46E5" />
+                  </TouchableOpacity>
+                )}
               </TouchableOpacity>
             );
-          })
-        ) : (
-          <View style={styles.emptyCard}>
-            <Ionicons name="checkmark-circle-outline" size={32} color="#10B981" />
-            <Text style={styles.emptyTitle}>All caught up!</Text>
-            <Text style={styles.emptySubtitle}>No upcoming deadlines</Text>
-          </View>
-        )}
-      </View>
+          })}
+        </View>
+      ) : (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="shield-checkmark-outline" size={32} color="#10B981" />
+          <Text style={styles.emptyTitle}>All Caught Up!</Text>
+          <Text style={styles.emptySubtitle}>
+            No urgent registration deadlines due in the next 7 days.
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
     flex: 1,
     minWidth: 280,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.85)',
+    ...THEME_DESIGN.shadows.card,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  headerTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    backgroundColor: '#FFFBEB',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
     color: '#0F172A',
+    letterSpacing: -0.3,
   },
   viewAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
   },
   viewAllText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
+    fontWeight: '700',
+    color: '#D97706',
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
   },
   deadlineCard: {
+    flex: 1,
+    minWidth: 130,
     backgroundColor: '#F8FAFC',
-    borderRadius: 18,
-    padding: 14,
-    width: '47%',
-    minWidth: 120,
+    borderRadius: 16,
+    padding: 12,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
-    alignItems: 'center',
+    borderColor: '#E2E8F0',
+    gap: 6,
   },
-  avatarCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 2,
+  criticalBorder: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FFF5F5',
   },
-  cardTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-    textAlign: 'center',
-    marginBottom: 2,
-  },
-  cardSubtitle: {
-    fontSize: 11,
-    color: '#64748B',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  urgencyPill: {
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  avatarCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  urgencyPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
     backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-    gap: 4,
   },
   urgencyPillCritical: {
     backgroundColor: '#FEE2E2',
@@ -209,35 +236,68 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF3C7',
   },
   urgencyText: {
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 8,
+    fontWeight: '800',
     color: '#64748B',
+    letterSpacing: 0.3,
   },
   urgencyTextCritical: {
     color: '#DC2626',
-    fontWeight: '700',
   },
   urgencyTextHigh: {
-    color: '#D97706',
-    fontWeight: '700',
+    color: '#B45309',
   },
-  emptyCard: {
-    width: '100%',
-    padding: 30,
+  cardTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+    lineHeight: 16,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  cardSubtitle: {
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  applyBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginTop: 4,
+    gap: 4,
+  },
+  applyBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 28,
+    gap: 6,
     backgroundColor: '#F8FAFC',
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   emptyTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#0F172A',
-    marginTop: 8,
+    color: '#1E293B',
   },
   emptySubtitle: {
     fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 2,
+    color: '#64748B',
+    textAlign: 'center',
+    maxWidth: 240,
+    lineHeight: 16,
   },
 });

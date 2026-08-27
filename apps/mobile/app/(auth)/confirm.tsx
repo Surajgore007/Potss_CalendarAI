@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
   Platform,
 } from 'react-native';
@@ -14,14 +13,27 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SidebarRail } from '../../src/components/SidebarRail';
 import { EditableEventCard } from '../../src/components/EditableEventCard';
+import { GlassCard } from '../../src/components/ui/GlassCard';
+import { GlassButton } from '../../src/components/ui/GlassButton';
+import { GlassLoadingOverlay } from '../../src/components/ui/GlassLoadingOverlay';
 import { useEvents } from '../../src/context/EventsContext';
-import { ExtractedEvent, validateEventForSave } from '@eventpulse/shared';
+import { useAuth } from '../../src/context/AuthContext';
+import {
+  ExtractedEvent,
+  PublishDestination,
+  validateEventForSave,
+  batchPublishCommunityEvents,
+} from '@eventpulse/shared';
+import { colors, radii, shadows } from '../../src/theme/tokens';
 
 export default function ConfirmScreen() {
   const router = useRouter();
+  const { user, isAdmin } = useAuth();
   const { pendingExtractions, setPendingExtractions, addBatchEvents } = useEvents();
+
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [destination, setDestination] = useState<PublishDestination>('personal');
 
   const handleUpdateEvent = (index: number, updated: ExtractedEvent) => {
     setPendingExtractions((prev) => {
@@ -51,23 +63,30 @@ export default function ConfirmScreen() {
         .filter((i) => i.severity === 'error')
         .map((i) => i.message)
         .join('\n');
-      Alert.alert('Please fix errors before saving', errorMsg);
+      Alert.alert('Please resolve errors', errorMsg);
       return;
     }
 
     setIsSaving(true);
     setSaveError(null);
     try {
-      await addBatchEvents([item]);
+      if (destination === 'personal' || destination === 'both') {
+        await addBatchEvents([item]);
+      }
+      if (isAdmin && user && (destination === 'community' || destination === 'both')) {
+        await batchPublishCommunityEvents([item], user.uid, 'SIES_GST');
+      }
+
       setPendingExtractions((prev) => {
         const next = prev.filter((_, i) => i !== index);
         if (next.length === 0) {
-          router.replace('/(auth)');
+          router.replace((destination === 'community' ? '/(auth)/college' : '/(auth)') as any);
         }
         return next;
       });
     } catch (err: any) {
-      setSaveError(err.message || 'Failed to save event to Firestore.');
+      console.error('Save single event failed:', err);
+      setSaveError("We're getting things ready. Please check your connection and try again in a moment.");
     } finally {
       setIsSaving(false);
     }
@@ -82,7 +101,7 @@ export default function ConfirmScreen() {
     if (invalidItems.length > 0) {
       Alert.alert(
         'Validation Errors',
-        'Some events have missing dates or invalid fields. Please resolve red warnings before saving.'
+        'Some events have missing dates or invalid fields. Please resolve highlighted items before saving.'
       );
       return;
     }
@@ -91,51 +110,39 @@ export default function ConfirmScreen() {
     setSaveError(null);
 
     try {
-      await addBatchEvents(pendingExtractions);
+      if (destination === 'personal' || destination === 'both') {
+        await addBatchEvents(pendingExtractions);
+      }
+      if (isAdmin && user && (destination === 'community' || destination === 'both')) {
+        await batchPublishCommunityEvents(pendingExtractions, user.uid, 'SIES_GST');
+      }
+
       setPendingExtractions([]);
-      router.replace('/(auth)');
+      router.replace((destination === 'community' ? '/(auth)/college' : '/(auth)') as any);
     } catch (err: any) {
-      console.error('Save all failed:', err);
-      setSaveError(err.message || 'Failed to save events to Firestore.');
+      console.error('Save all events failed:', err);
+      setSaveError("We're getting things ready. Please check your connection and try again in a moment.");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDiscardAll = () => {
-    setPendingExtractions([]);
-    router.back();
-  };
-
-  if (!pendingExtractions || pendingExtractions.length === 0) {
-    return (
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.emptyContainer}>
-          <Ionicons
-            name="documents-outline"
-            size={48}
-            color="#94A3B8"
-            style={{ marginBottom: 12 }}
-          />
-          <Text style={styles.emptyTitle}>No pending extractions</Text>
-          <Text style={styles.emptySubtitle}>
-            Extract a WhatsApp message to see preview here.
-          </Text>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.replace('/extract')}
-          >
-            <Text style={styles.backBtnText}>Go to Extract</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const totalCount = pendingExtractions.length;
+  const count = pendingExtractions.length;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      {/* Full-screen Loading Overlay during batch save */}
+      <GlassLoadingOverlay
+        visible={isSaving}
+        message={
+          destination === 'community'
+            ? 'Publishing to SIES GST Feed...'
+            : destination === 'both'
+            ? 'Saving to Calendar & SIES GST Feed...'
+            : 'Saving to your private calendar...'
+        }
+      />
+
       <View style={styles.layoutWrapper}>
         {Platform.OS === 'web' && (
           <SidebarRail onExtractPress={() => router.push('/extract')} />
@@ -143,52 +150,79 @@ export default function ConfirmScreen() {
 
         <ScrollView
           style={styles.mainScroll}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
         >
           {/* Header Card */}
-          <View style={styles.headerCard}>
+          <GlassCard contentStyle={styles.headerCard}>
             <TouchableOpacity
-              style={styles.backHeaderBtn}
+              style={styles.backBtn}
               onPress={() => router.back()}
+              activeOpacity={0.7}
             >
-              <Ionicons name="arrow-back" size={18} color="#64748B" />
+              <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
             </TouchableOpacity>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle}>Review & Confirm</Text>
-              <Text style={styles.headerSubtitle}>
-                {totalCount} event{totalCount > 1 ? 's' : ''} extracted by Groq AI
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.headerTitle} numberOfLines={1}>Review Extracted Schedule</Text>
+              <Text style={styles.headerSubtitle} numberOfLines={2}>
+                {count} {count === 1 ? 'event ready' : 'events ready'} for confirmation
               </Text>
             </View>
+          </GlassCard>
 
-            <TouchableOpacity onPress={handleDiscardAll}>
-              <Text style={styles.discardText}>Discard All</Text>
-            </TouchableOpacity>
-          </View>
+          {/* Admin Destination Picker */}
+          {isAdmin && (
+            <GlassCard contentStyle={styles.destinationCard}>
+              <View style={styles.destHeaderRow}>
+                <Ionicons name="git-branch-outline" size={15} color={colors.textPrimary} />
+                <Text style={styles.destHeaderTitle}>PUBLISH DESTINATION (ADMIN)</Text>
+              </View>
 
-          {/* Review Notice */}
-          <View style={styles.topNotice}>
-            <Ionicons name="create-outline" size={18} color="#3B82F6" />
-            <Text style={styles.topNoticeText}>
-              Never auto-saves silently. Review, edit, or adjust tags before syncing to your calendar.
-            </Text>
-          </View>
+              <View style={styles.destPickerRow}>
+                {(
+                  [
+                    { key: 'personal', label: 'My Calendar', icon: 'calendar-outline' },
+                    { key: 'community', label: 'SIES GST Feed', icon: 'school-outline' },
+                    { key: 'both', label: 'Both', icon: 'globe-outline' },
+                  ] as const
+                ).map((opt) => {
+                  const isSelected = destination === opt.key;
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.destOption, isSelected && styles.destOptionSelected]}
+                      onPress={() => setDestination(opt.key)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name={opt.icon as any}
+                        size={14}
+                        color={isSelected ? '#FFFFFF' : colors.textSecondary}
+                      />
+                      <Text style={[styles.destOptionText, isSelected && styles.destOptionTextSelected]}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </GlassCard>
+          )}
 
           {saveError && (
             <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={16} color="#EF4444" />
-              <Text style={styles.errorText}>{saveError}</Text>
+              <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
+              <Text style={styles.errorText} numberOfLines={3}>{saveError}</Text>
             </View>
           )}
 
-          {/* Editable Cards */}
-          {pendingExtractions.map((item, idx) => (
+          {/* List of Editable Cards */}
+          {pendingExtractions.map((event, idx) => (
             <EditableEventCard
-              key={item.temp_id || idx}
-              event={item}
+              key={idx}
+              event={event}
               index={idx}
-              total={totalCount}
+              total={count}
               onUpdate={(updated) => handleUpdateEvent(idx, updated)}
               onDelete={() => handleDeleteEvent(idx)}
               onSaveSingle={() => handleSaveSingle(idx)}
@@ -196,39 +230,39 @@ export default function ConfirmScreen() {
             />
           ))}
 
-          {/* Save All CTA */}
-          <View style={styles.saveAllSection}>
-            <TouchableOpacity
-              style={[styles.saveAllBtn, isSaving && styles.btnDisabled]}
-              activeOpacity={0.85}
+          {/* Sticky Bottom Actions */}
+          <View style={styles.bottomBar}>
+            <GlassButton
+              title={
+                destination === 'community'
+                  ? `Publish ${count === 1 ? 'Event' : `All ${count} Events`} to SIES GST`
+                  : destination === 'both'
+                  ? `Save & Publish ${count === 1 ? 'Event' : `All ${count} Events`}`
+                  : `Save ${count === 1 ? 'Event' : `All ${count} Events`} to Calendar`
+              }
+              variant="primary"
               onPress={handleSaveAll}
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <View style={styles.btnRow}>
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                  <Text style={styles.saveAllBtnText}>Saving to Firestore...</Text>
-                </View>
-              ) : (
-                <View style={styles.btnRow}>
-                  <Ionicons
-                    name="cloud-upload"
-                    size={18}
-                    color="#FFFFFF"
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text style={styles.saveAllBtnText}>
-                    {totalCount === 1
-                      ? 'Save Event to Calendar'
-                      : `Save All ${totalCount} Events`}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
+              loading={isSaving}
+              icon={
+                <Ionicons
+                  name={destination === 'community' ? 'school-outline' : 'cloud-upload-outline'}
+                  size={16}
+                  color="#FFFFFF"
+                />
+              }
+              style={styles.saveAllBtn}
+            />
 
-            <Text style={styles.syncDisclaimer}>
-              Events will be saved to your calendar and available across all views.
-            </Text>
+            <TouchableOpacity
+              style={styles.discardBtn}
+              onPress={() => {
+                setPendingExtractions([]);
+                router.replace('/(auth)');
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.discardText} numberOfLines={1}>Discard All</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </View>
@@ -239,154 +273,135 @@ export default function ConfirmScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#EEF2F6',
+    backgroundColor: colors.canvas,
   },
   layoutWrapper: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: '#EEF2F6',
   },
   mainScroll: {
     flex: 1,
   },
-  scrollContent: {
+  contentContainer: {
     padding: 16,
     paddingBottom: 40,
-    gap: 12,
+    gap: 14,
+    maxWidth: 720,
+    alignSelf: 'center',
+    width: '100%',
   },
   headerCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 16,
     gap: 12,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
   },
-  backHeaderBtn: {
+  backBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    backgroundColor: colors.canvasSubtle,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.glassBorder,
+  },
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#0F172A',
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
+    lineHeight: 26,
   },
   headerSubtitle: {
     fontSize: 12,
-    color: '#64748B',
+    color: colors.textSecondary,
+    lineHeight: 16,
     marginTop: 2,
   },
-  discardText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#EF4444',
+  destinationCard: {
+    padding: 14,
+    gap: 10,
   },
-  topNotice: {
+  destHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    padding: 14,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+    gap: 6,
   },
-  topNoticeText: {
+  destHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: 0.4,
+  },
+  destPickerRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.canvasSubtle,
+    borderRadius: radii.control,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    gap: 3,
+  },
+  destOption: {
     flex: 1,
-    fontSize: 12,
-    color: '#1E40AF',
-    lineHeight: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+  },
+  destOptionSelected: {
+    backgroundColor: '#FFFFFF',
+    ...shadows.subtle,
+  },
+  destOptionText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  destOptionTextSelected: {
+    color: colors.textPrimary,
+    fontWeight: '700',
   },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    padding: 12,
-    backgroundColor: '#FEE2E2',
-    borderRadius: 14,
+    backgroundColor: colors.dangerLight,
     borderWidth: 1,
-    borderColor: '#EF4444',
+    borderColor: 'rgba(220, 38, 38, 0.15)',
+    borderRadius: radii.control,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   errorText: {
     flex: 1,
     fontSize: 12,
-    color: '#DC2626',
+    color: colors.danger,
+    lineHeight: 16,
   },
-  saveAllSection: {
-    marginTop: 10,
-    gap: 8,
+  bottomBar: {
+    gap: 10,
+    marginTop: 8,
   },
   saveAllBtn: {
-    backgroundColor: '#10B981',
-    paddingVertical: 16,
-    borderRadius: 20,
+    minHeight: 48,
+  },
+  discardBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  btnDisabled: {
-    backgroundColor: '#94A3B8',
-    opacity: 0.7,
-  },
-  btnRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  saveAllBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  syncDisclaimer: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 6,
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  backBtn: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: 14,
   },
-  backBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  discardText: {
+    fontSize: 13,
+    color: colors.danger,
+    fontWeight: '500',
   },
 });

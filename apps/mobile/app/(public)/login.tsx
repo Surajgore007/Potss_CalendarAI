@@ -4,146 +4,299 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
+import { GlassCard } from '../../src/components/ui/GlassCard';
+import { GlassButton } from '../../src/components/ui/GlassButton';
+import { GlassInput } from '../../src/components/ui/GlassInput';
+import { colors, radii, shadows } from '../../src/theme/tokens';
 
 export default function LoginScreen() {
-  const router = useRouter();
-  const { user, signInWithGoogle, signInAsDemoUser, isLoading } = useAuth();
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const {
+    signInWithGoogle,
+    signInWithEmail,
+    signUpWithEmail,
+    sendPasswordReset,
+    isLoading,
+    authError,
+  } = useAuth();
 
-  React.useEffect(() => {
-    if (user) {
-      router.replace('/(auth)');
-    }
-  }, [user]);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const displayError = errorMsg || authError;
 
   const handleGoogleSignIn = async () => {
     setErrorMsg(null);
+    setSuccessMsg(null);
     try {
       await signInWithGoogle();
-      router.replace('/(auth)');
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg(
-        err.message || 'Google Sign-In failed. Try Demo Mode for instant testing.'
-      );
+      console.error('Google Sign-in trigger error:', err);
+      setErrorMsg(err.message || 'Google sign-in was not completed. Please try again.');
     }
   };
 
-  const handleDemoSignIn = async () => {
+  const handleAuthSubmit = async () => {
     setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const cleanEmail = email.trim();
+    const cleanPassword = password.trim();
+    const cleanName = fullName.trim();
+
+    if (!cleanEmail) {
+      setErrorMsg('Please enter your email address.');
+      return;
+    }
+
+    if (!cleanPassword) {
+      setErrorMsg('Please enter your password.');
+      return;
+    }
+
     try {
-      await signInAsDemoUser('Suraj Dev', 'suraj.dev@example.com');
-      router.replace('/(auth)');
+      if (authMode === 'signup') {
+        if (cleanPassword.length < 6) {
+          setErrorMsg('Password must be at least 6 characters.');
+          return;
+        }
+        await signUpWithEmail(cleanEmail, cleanPassword, cleanName || undefined);
+      } else {
+        await signInWithEmail(cleanEmail, cleanPassword);
+      }
     } catch (err: any) {
-      setErrorMsg('Demo sign in failed.');
+      console.error('Auth submit error:', err);
+      // Handled and mapped in AuthContext
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setErrorMsg('Please enter your email address in the field above first.');
+      return;
+    }
+
+    try {
+      await sendPasswordReset(cleanEmail);
+      setSuccessMsg(`Password reset link sent. Please check your inbox.`);
+    } catch (err: any) {
+      console.error('Password reset error:', err);
+      setErrorMsg("Could not send password reset email. Please try again.");
     }
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        {/* Brand Header */}
-        <View style={styles.brandSection}>
-          <View style={styles.logoBadge}>
-            <Ionicons name="pulse" size={32} color="#3B82F6" />
-          </View>
-          <Text style={styles.brandTitle}>EventPulse</Text>
-          <Text style={styles.brandTagline}>
-            AI-Powered WhatsApp Event & Deadline Calendar
-          </Text>
-        </View>
-
-        {/* Feature Cards Grid */}
-        <View style={styles.featuresSection}>
-          <View style={styles.featureCard}>
-            <View style={[styles.featureIcon, { backgroundColor: '#EFF6FF' }]}>
-              <Ionicons name="sparkles" size={20} color="#3B82F6" />
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.flexOne}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Brand Header */}
+          <View style={styles.brandSection}>
+            <View style={styles.logoBadge}>
+              <Ionicons name="calendar-outline" size={26} color={colors.primary} />
             </View>
-            <View style={styles.featureText}>
-              <Text style={styles.featureTitle}>Groq LPU AI Extraction</Text>
-              <Text style={styles.featureDesc}>
-                Paste any unstructured WhatsApp message and extract events in ~200ms.
-              </Text>
-            </View>
+            <Text style={styles.brandTitle} numberOfLines={1}>Vanko</Text>
+            <Text style={styles.brandTagline} numberOfLines={1}>
+              Intelligent Event & Deadline Calendar
+            </Text>
           </View>
 
-          <View style={styles.featureCard}>
-            <View style={[styles.featureIcon, { backgroundColor: '#FEF3C7' }]}>
-              <Ionicons name="alarm" size={20} color="#D97706" />
+          {/* Feature Highlights */}
+          <GlassCard contentStyle={styles.featuresList}>
+            <View style={styles.featureItem}>
+              <View style={[styles.featureIconWrap, { backgroundColor: colors.canvasSubtle }]}>
+                <Ionicons name="sparkles-outline" size={15} color={colors.textPrimary} />
+              </View>
+              <View style={styles.featureTextCol}>
+                <Text style={styles.featureTitle} numberOfLines={1}>Instant Smart Extraction</Text>
+                <Text style={styles.featureSub} numberOfLines={2}>
+                  Converts forwarded announcements into structured calendar items.
+                </Text>
+              </View>
             </View>
-            <View style={styles.featureText}>
-              <Text style={styles.featureTitle}>Deadline vs Event Distinction</Text>
-              <Text style={styles.featureDesc}>
-                Never miss registration deadlines separated from the actual event date.
-              </Text>
-            </View>
-          </View>
 
-          <View style={styles.featureCard}>
-            <View style={[styles.featureIcon, { backgroundColor: '#FEE2E2' }]}>
-              <Ionicons name="git-network-outline" size={20} color="#DC2626" />
+            <View style={styles.featureItem}>
+              <View style={[styles.featureIconWrap, { backgroundColor: colors.canvasSubtle }]}>
+                <Ionicons name="shield-checkmark-outline" size={15} color={colors.textPrimary} />
+              </View>
+              <View style={styles.featureTextCol}>
+                <Text style={styles.featureTitle} numberOfLines={1}>Private Cloud Sync</Text>
+                <Text style={styles.featureSub} numberOfLines={2}>
+                  Your personalized schedule stays synced across your devices.
+                </Text>
+              </View>
             </View>
-            <View style={styles.featureText}>
-              <Text style={styles.featureTitle}>Calendar Clash Detection</Text>
-              <Text style={styles.featureDesc}>
-                Flags same-day hackathons and overlapping workshop schedules.
-              </Text>
+          </GlassCard>
+
+          {/* Main Auth Form Card */}
+          <GlassCard contentStyle={styles.formCard}>
+            {/* Google One-Tap Sign In */}
+            <GlassButton
+              title="Continue with Google"
+              variant="glass"
+              onPress={handleGoogleSignIn}
+              loading={isLoading}
+              icon={<Ionicons name="logo-google" size={17} color={colors.textPrimary} />}
+              style={styles.googleBtn}
+              textStyle={styles.googleBtnText}
+            />
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or continue with email</Text>
+              <View style={styles.dividerLine} />
             </View>
-          </View>
-        </View>
 
-        {/* Error message */}
-        {errorMsg && (
-          <View style={styles.errorBox}>
-            <Ionicons name="alert-circle" size={16} color="#EF4444" />
-            <Text style={styles.errorText}>{errorMsg}</Text>
-          </View>
-        )}
+            {/* Segmented Auth Switcher */}
+            <View style={styles.segmentedControl}>
+              <TouchableOpacity
+                style={[
+                  styles.segmentBtn,
+                  authMode === 'signin' && styles.segmentBtnActive,
+                ]}
+                onPress={() => {
+                  setAuthMode('signin');
+                  setErrorMsg(null);
+                  setSuccessMsg(null);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    authMode === 'signin' && styles.segmentTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  Sign In
+                </Text>
+              </TouchableOpacity>
 
-        {/* Auth CTA Buttons */}
-        <View style={styles.ctaSection}>
-          {/* Demo Mode Button (Instant preview) */}
-          <TouchableOpacity
-            style={styles.demoButton}
-            onPress={handleDemoSignIn}
-            disabled={isLoading}
-            activeOpacity={0.85}
-          >
-            <View style={styles.btnContent}>
-              <Ionicons name="play-circle" size={20} color="#FFFFFF" />
-              <Text style={styles.demoButtonText}>Try Demo Mode (Instant)</Text>
+              <TouchableOpacity
+                style={[
+                  styles.segmentBtn,
+                  authMode === 'signup' && styles.segmentBtnActive,
+                ]}
+                onPress={() => {
+                  setAuthMode('signup');
+                  setErrorMsg(null);
+                  setSuccessMsg(null);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    authMode === 'signup' && styles.segmentTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  Create Account
+                </Text>
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
 
-          {/* Google Sign-In */}
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={handleGoogleSignIn}
-            disabled={isLoading}
-            activeOpacity={0.85}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#0F172A" size="small" />
-            ) : (
-              <View style={styles.btnContent}>
-                <Ionicons name="logo-google" size={18} color="#EA4335" />
-                <Text style={styles.googleButtonText}>Sign in with Google</Text>
+            {/* Error & Success Feedback Alerts */}
+            {displayError && (
+              <View style={styles.errorBanner}>
+                <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
+                <Text style={styles.errorBannerText} numberOfLines={3}>{displayError}</Text>
               </View>
             )}
-          </TouchableOpacity>
 
-          <Text style={styles.disclaimerText}>
-            Demo mode enables full local preview without Firebase configuration.
-          </Text>
-        </View>
-      </ScrollView>
+            {successMsg && (
+              <View style={styles.successBanner}>
+                <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
+                <Text style={styles.successBannerText} numberOfLines={2}>{successMsg}</Text>
+              </View>
+            )}
+
+            {/* Form Fields with Input Limits */}
+            <View style={styles.fieldsStack}>
+              {authMode === 'signup' && (
+                <GlassInput
+                  label="Full Name"
+                  placeholder="Alex Doe"
+                  value={fullName}
+                  onChangeText={setFullName}
+                  maxLength={64}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  leftIcon={<Ionicons name="person-outline" size={16} color={colors.textTertiary} />}
+                />
+              )}
+
+              <GlassInput
+                label="Email Address"
+                placeholder="alex@example.com"
+                value={email}
+                onChangeText={setEmail}
+                maxLength={100}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoCorrect={false}
+                leftIcon={<Ionicons name="mail-outline" size={16} color={colors.textTertiary} />}
+              />
+
+              <GlassInput
+                label="Password"
+                placeholder="••••••••"
+                value={password}
+                onChangeText={setPassword}
+                maxLength={64}
+                secureTextEntry
+                leftIcon={<Ionicons name="lock-closed-outline" size={16} color={colors.textTertiary} />}
+              />
+
+              {authMode === 'signin' && (
+                <TouchableOpacity
+                  style={styles.forgotBtn}
+                  onPress={handleForgotPassword}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Submit Button */}
+            <GlassButton
+              title={authMode === 'signin' ? 'Sign In' : 'Create Free Account'}
+              variant="primary"
+              onPress={handleAuthSubmit}
+              loading={isLoading}
+              style={styles.submitBtn}
+            />
+
+            {/* Security Guarantee Footer */}
+            <View style={styles.securityRow}>
+              <Ionicons name="lock-closed-outline" size={12} color={colors.textTertiary} />
+              <Text style={styles.securityText} numberOfLines={1}>
+                Protected with end-to-end cloud encryption
+              </Text>
+            </View>
+          </GlassCard>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -151,151 +304,199 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#EEF2F6',
+    backgroundColor: colors.canvas,
   },
-  container: {
-    padding: 24,
-    justifyContent: 'center',
-    minHeight: '100%',
-    maxWidth: 520,
+  flexOne: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    padding: 16,
+    paddingBottom: 40,
+    gap: 14,
+    maxWidth: 440,
     alignSelf: 'center',
     width: '100%',
   },
   brandSection: {
     alignItems: 'center',
-    marginBottom: 32,
+    gap: 6,
+    paddingVertical: 12,
   },
   logoBadge: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: '#EFF6FF',
+    width: 54,
+    height: 54,
+    borderRadius: radii.card,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 4,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: colors.glassBorder,
+    ...shadows.subtle,
   },
   brandTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontSize: 26,
+    fontWeight: '700',
+    color: colors.textPrimary,
     letterSpacing: -0.5,
+    lineHeight: 32,
   },
   brandTagline: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 6,
-    lineHeight: 20,
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '400',
+    lineHeight: 18,
   },
-  featuresSection: {
+  featuresList: {
+    padding: 14,
     gap: 12,
-    marginBottom: 32,
   },
-  featureCard: {
+  featureItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 1,
-    gap: 14,
+    gap: 12,
   },
-  featureIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  featureIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  featureText: {
+  featureTextCol: {
     flex: 1,
+    minWidth: 0,
   },
   featureTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    lineHeight: 18,
   },
-  featureDesc: {
+  featureSub: {
     fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+    color: colors.textSecondary,
     lineHeight: 16,
   },
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FEE2E2',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 16,
+  formCard: {
+    padding: 16,
+    gap: 14,
   },
-  errorText: {
-    fontSize: 12,
-    color: '#DC2626',
-    flex: 1,
-  },
-  ctaSection: {
-    gap: 12,
-  },
-  demoButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 16,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  demoButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  googleButton: {
+  googleBtn: {
+    minHeight: 46,
     backgroundColor: '#FFFFFF',
-    paddingVertical: 15,
-    borderRadius: 20,
+    borderColor: colors.glassBorder,
+  },
+  googleBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.glassBorder,
+  },
+  dividerText: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: colors.canvasSubtle,
+    borderRadius: radii.control,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
+    borderRadius: radii.control - 3,
   },
-  googleButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
+  segmentBtnActive: {
+    backgroundColor: '#FFFFFF',
+    ...shadows.subtle,
   },
-  btnContent: {
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  segmentTextActive: {
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    backgroundColor: colors.dangerLight,
+    borderWidth: 1,
+    borderColor: 'rgba(220, 38, 38, 0.15)',
+    borderRadius: radii.control,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  disclaimerText: {
+  errorBannerText: {
+    flex: 1,
     fontSize: 12,
-    color: '#94A3B8',
-    textAlign: 'center',
-    marginTop: 6,
+    color: colors.danger,
+    lineHeight: 16,
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.successLight,
+    borderWidth: 1,
+    borderColor: 'rgba(22, 163, 74, 0.15)',
+    borderRadius: radii.control,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  successBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.success,
+    lineHeight: 16,
+  },
+  fieldsStack: {
+    gap: 10,
+  },
+  forgotBtn: {
+    alignSelf: 'flex-end',
+    paddingVertical: 2,
+  },
+  forgotText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  submitBtn: {
+    minHeight: 48,
+    marginTop: 2,
+  },
+  securityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingTop: 4,
+  },
+  securityText: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    lineHeight: 16,
   },
 });

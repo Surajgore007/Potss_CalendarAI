@@ -31,3 +31,6 @@ Thumbs.db
 
 # EAS build
 .eas/
+
+Vanko-v1.0.apk
+*.apk

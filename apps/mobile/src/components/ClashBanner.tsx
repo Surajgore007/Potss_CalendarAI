@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ClashDetail } from '@eventpulse/shared';
+import { ClashDetail, THEME_DESIGN } from '@eventpulse/shared';
 
 interface ClashBannerProps {
   clashes: ClashDetail[];
@@ -18,27 +18,29 @@ export const ClashBanner: React.FC<ClashBannerProps> = ({ clashes }) => {
     <View style={styles.container}>
       <TouchableOpacity
         style={styles.headerRow}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
         onPress={() => setExpanded((prev) => !prev)}
       >
         <View style={styles.iconBox}>
-          <Ionicons name="warning" size={18} color="#DC2626" />
+          <Ionicons name="warning" size={16} color="#E11D48" />
         </View>
 
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>
-            {count === 1 ? '1 Calendar Clash Detected' : `${count} Calendar Clashes Detected`}
+            {count === 1 ? '1 Schedule Conflict Detected' : `${count} Schedule Conflicts Detected`}
           </Text>
           <Text style={styles.subtitle}>
-            {expanded ? 'Tap to collapse' : 'Overlapping event dates or critical deadlines found'}
+            {expanded ? 'Tap to collapse details' : 'Overlapping event dates or collisions found'}
           </Text>
         </View>
 
-        <Ionicons
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={18}
-          color="#DC2626"
-        />
+        <View style={styles.chevronWrap}>
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color="#E11D48"
+          />
+        </View>
       </TouchableOpacity>
 
       {expanded && (
@@ -59,67 +61,68 @@ export const ClashBanner: React.FC<ClashBannerProps> = ({ clashes }) => {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: '#FFF1F2',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: '#FFE4E6',
     overflow: 'hidden',
-    marginBottom: 12,
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
+    marginBottom: 16,
+    ...THEME_DESIGN.shadows.card,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     gap: 12,
   },
   iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FEE2E2',
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FFE4E6',
     justifyContent: 'center',
     alignItems: 'center',
   },
   title: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#991B1B',
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#9F1239',
+    letterSpacing: -0.2,
   },
   subtitle: {
-    fontSize: 12,
-    color: '#B91C1C',
-    marginTop: 2,
+    fontSize: 11,
+    color: '#BE123C',
+    marginTop: 1,
+    fontWeight: '500',
+  },
+  chevronWrap: {
+    padding: 4,
   },
   detailsList: {
     paddingHorizontal: 16,
     paddingBottom: 14,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#FEE2E2',
     gap: 8,
+    borderTopWidth: 1,
+    borderColor: 'rgba(254, 205, 211, 0.6)',
+    paddingTop: 10,
   },
   clashItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    marginTop: 4,
   },
   bulletDot: {
-    width: 6,
-    height: 6,
+    width: 5,
+    height: 5,
     borderRadius: 3,
-    backgroundColor: '#DC2626',
-    marginTop: 6,
+    backgroundColor: '#E11D48',
+    marginTop: 5,
   },
   clashText: {
     fontSize: 12,
-    color: '#7F1D1D',
-    lineHeight: 18,
+    color: '#881337',
+    lineHeight: 16,
     fontWeight: '500',
   },
 });

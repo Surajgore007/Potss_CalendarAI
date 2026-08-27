@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 12.0.0"
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -11,11 +12,35 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyDH3quqTUCY5uwaoNw3TD_23ZcHDh2Jbx0",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "calendarai-f5cd0.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "calendarai-f5cd0",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "calendarai-f5cd0.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "922680174583",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:922680174583:web:8e65caedb7103e721fb0f2",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "922680174583-moi8a65hp2ji4345pco5fvt7tum49f7r.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "922680174583-j1a2rpqst7da4g5t4lp9su29q4ukn2p2.apps.googleusercontent.com",
+        "EXPO_PUBLIC_WORKER_URL": "https://eventpulse-api.surajgore.workers.dev",
+        "EXPO_PUBLIC_API_URL": "https://eventpulse-api.surajgore.workers.dev"
       }
     },
     "production": {
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyDH3quqTUCY5uwaoNw3TD_23ZcHDh2Jbx0",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "calendarai-f5cd0.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "calendarai-f5cd0",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "calendarai-f5cd0.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "922680174583",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:922680174583:web:8e65caedb7103e721fb0f2",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "922680174583-moi8a65hp2ji4345pco5fvt7tum49f7r.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "922680174583-j1a2rpqst7da4g5t4lp9su29q4ukn2p2.apps.googleusercontent.com",
+        "EXPO_PUBLIC_WORKER_URL": "https://eventpulse-api.surajgore.workers.dev",
+        "EXPO_PUBLIC_API_URL": "https://eventpulse-api.surajgore.workers.dev"
       }
     }
   },

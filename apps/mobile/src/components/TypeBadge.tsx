@@ -13,14 +13,26 @@ export const TypeBadge: React.FC<TypeBadgeProps> = ({ type, size = 'md' }) => {
   const isSm = size === 'sm';
 
   return (
-    <View style={[styles.badge, { backgroundColor: config.badgeBg }, isSm && styles.badgeSm]}>
+    <View
+      style={[
+        styles.badge,
+        { backgroundColor: config.badgeBg, borderColor: `${config.accentColor}30` },
+        isSm && styles.badgeSm,
+      ]}
+    >
       <Ionicons
         name={config.icon as any}
-        size={isSm ? 11 : 13}
+        size={isSm ? 10 : 12}
         color={config.badgeText}
         style={{ marginRight: 4 }}
       />
-      <Text style={[styles.text, { color: config.badgeText }, isSm && styles.textSm]}>
+      <Text
+        style={[
+          styles.text,
+          { color: config.badgeText },
+          isSm && styles.textSm,
+        ]}
+      >
         {config.label}
       </Text>
     </View>
@@ -33,22 +45,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
   badgeSm: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   text: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
   textSm: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

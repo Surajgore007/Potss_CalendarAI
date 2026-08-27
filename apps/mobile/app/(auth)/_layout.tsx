@@ -2,6 +2,7 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
+import { colors } from '../../src/theme/tokens';
 
 export default function AuthLayout() {
   const isWeb = Platform.OS === 'web';
@@ -13,23 +14,24 @@ export default function AuthLayout() {
         tabBarStyle: isWeb
           ? { display: 'none' }
           : {
-              backgroundColor: '#FFFFFF',
-              borderTopColor: 'rgba(226, 232, 240, 0.8)',
+              backgroundColor: 'rgba(255, 255, 255, 0.92)',
+              borderTopColor: 'rgba(0, 0, 0, 0.06)',
               borderTopWidth: 1,
               height: Platform.OS === 'ios' ? 88 : 64,
               paddingBottom: Platform.OS === 'ios' ? 28 : 10,
               paddingTop: 8,
-              shadowColor: '#64748B',
+              elevation: 8,
+              shadowColor: '#000',
               shadowOffset: { width: 0, height: -2 },
-              shadowOpacity: 0.05,
-              shadowRadius: 8,
-              elevation: 4,
+              shadowOpacity: 0.04,
+              shadowRadius: 10,
             },
-        tabBarActiveTintColor: '#3B82F6',
-        tabBarInactiveTintColor: '#94A3B8',
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: '#8E8E93',
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '600',
+          letterSpacing: -0.2,
         },
       }}
     >
@@ -37,8 +39,12 @@ export default function AuthLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="grid-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? 'grid' : 'grid-outline'}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
@@ -50,8 +56,8 @@ export default function AuthLayout() {
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? 'sparkles' : 'sparkles-outline'}
-              size={size + 2}
-              color={focused ? '#3B82F6' : color}
+              size={22}
+              color={color}
             />
           ),
         }}
@@ -61,13 +67,45 @@ export default function AuthLayout() {
         name="calendar"
         options={{
           title: 'Calendar',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? 'calendar' : 'calendar-outline'}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
 
-      {/* Hidden auxiliary screens (not separate tab bar items) */}
+      <Tabs.Screen
+        name="college"
+        options={{
+          title: 'SIES GST',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? 'school' : 'school-outline'}
+              size={22}
+              color={color}
+            />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? 'settings' : 'settings-outline'}
+              size={22}
+              color={color}
+            />
+          ),
+        }}
+      />
+
+      {/* Hidden auxiliary screens */}
       <Tabs.Screen
         name="confirm"
         options={{

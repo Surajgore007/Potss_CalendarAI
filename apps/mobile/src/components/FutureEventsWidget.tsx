@@ -7,6 +7,8 @@ import {
   formatFriendlyDate,
   getDaysDifference,
   EVENT_TYPE_CONFIG,
+  EVENT_MODE_CONFIG,
+  THEME_DESIGN,
 } from '@eventpulse/shared';
 
 interface FutureEventsWidgetProps {
@@ -16,7 +18,6 @@ interface FutureEventsWidgetProps {
 export const FutureEventsWidget: React.FC<FutureEventsWidgetProps> = ({ events }) => {
   const router = useRouter();
 
-  // Sort by soonest upcoming event start date, skip past events
   const upcomingEvents = useMemo(() => {
     return events
       .filter((e) => {
@@ -38,7 +39,6 @@ export const FutureEventsWidget: React.FC<FutureEventsWidgetProps> = ({ events }
 
   const formatTime = (time: string | null): string => {
     if (!time) return 'All Day';
-    // Convert 24h "14:00" to "2:00 PM"
     const [h, m] = time.split(':').map(Number);
     if (isNaN(h) || isNaN(m)) return time;
     const ampm = h >= 12 ? 'PM' : 'AM';
@@ -50,22 +50,29 @@ export const FutureEventsWidget: React.FC<FutureEventsWidgetProps> = ({ events }
     const targetDate = event.event_start_date || event.registration_deadline;
     if (!targetDate) return '';
     const diff = getDaysDifference(targetDate);
-    if (diff === 0) return 'Today';
-    if (diff === 1) return 'Tomorrow';
-    return `In ${diff} days`;
+    if (diff === 0) return 'TODAY';
+    if (diff === 1) return 'TOMORROW';
+    return `IN ${diff} DAYS`;
   };
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Upcoming Events</Text>
+        <View style={styles.headerTitleGroup}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="calendar-outline" size={15} color="#4F46E5" />
+          </View>
+          <Text style={styles.title}>Upcoming Events</Text>
+        </View>
+
         <TouchableOpacity
           style={styles.viewAllBtn}
           onPress={() => router.push('/calendar')}
+          activeOpacity={0.75}
         >
-          <Ionicons name="open-outline" size={14} color="#64748B" />
           <Text style={styles.viewAllText}>View all</Text>
+          <Ionicons name="chevron-forward" size={13} color="#4F46E5" />
         </TouchableOpacity>
       </View>
 
@@ -78,12 +85,31 @@ export const FutureEventsWidget: React.FC<FutureEventsWidgetProps> = ({ events }
         >
           <View style={styles.featuredTopRow}>
             <View style={styles.featuredTitleGroup}>
+              <View style={styles.featuredBadgeRow}>
+                <View
+                  style={[
+                    styles.typeBadge,
+                    {
+                      backgroundColor:
+                        EVENT_TYPE_CONFIG[featured.type]?.badgeBg || '#EEF2FF',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.typeBadgeText,
+                      {
+                        color:
+                          EVENT_TYPE_CONFIG[featured.type]?.badgeText || '#4F46E5',
+                      },
+                    ]}
+                  >
+                    {EVENT_TYPE_CONFIG[featured.type]?.label.toUpperCase()}
+                  </Text>
+                </View>
+              </View>
               <Text style={styles.featuredTitle} numberOfLines={2}>
                 {featured.title}
-              </Text>
-              <Text style={styles.featuredSubtitle} numberOfLines={1}>
-                {featured.location || EVENT_TYPE_CONFIG[featured.type]?.label || 'Event'}
-                {featured.mode !== 'online' ? '' : ' • Online'}
               </Text>
             </View>
 
@@ -95,81 +121,81 @@ export const FutureEventsWidget: React.FC<FutureEventsWidgetProps> = ({ events }
           </View>
 
           <View style={styles.featuredBottomRow}>
-            <View style={styles.timePill}>
-              <Ionicons name="time-outline" size={13} color="#78350F" />
-              <Text style={styles.timePillText}>{formatTime(featured.time)}</Text>
+            <View style={styles.pillItem}>
+              <Ionicons name="time-outline" size={12} color="#475569" />
+              <Text style={styles.pillText}>{formatTime(featured.time)}</Text>
             </View>
 
-            <View style={styles.datePill}>
-              <Ionicons name="calendar-outline" size={13} color="#78350F" />
-              <Text style={styles.datePillText}>
-                {featured.event_start_date
-                  ? formatFriendlyDate(featured.event_start_date, false)
-                  : 'Date TBD'}
+            <View style={styles.pillItem}>
+              <Ionicons name="calendar-clear-outline" size={12} color="#475569" />
+              <Text style={styles.pillText}>
+                {formatFriendlyDate(featured.event_start_date, false)}
               </Text>
             </View>
 
-            {featured.mode && (
-              <View style={styles.modePill}>
-                <Ionicons
-                  name={featured.mode === 'online' ? 'globe-outline' : 'location-outline'}
-                  size={12}
-                  color="#78350F"
-                />
-                <Text style={styles.modePillText}>
-                  {featured.mode.charAt(0).toUpperCase() + featured.mode.slice(1)}
-                </Text>
-              </View>
-            )}
+            <View style={styles.pillItem}>
+              <Ionicons
+                name={
+                  featured.mode === 'online'
+                    ? 'globe-outline'
+                    : 'location-outline'
+                }
+                size={12}
+                color="#475569"
+              />
+              <Text style={styles.pillText}>
+                {featured.location || (featured.mode === 'online' ? 'Online' : 'In-Person')}
+              </Text>
+            </View>
           </View>
         </TouchableOpacity>
       ) : (
         <View style={styles.emptyFeatured}>
           <Ionicons name="calendar-outline" size={28} color="#94A3B8" />
           <Text style={styles.emptyText}>No upcoming events scheduled</Text>
+          <TouchableOpacity
+            style={styles.emptyAddBtn}
+            onPress={() => router.push('/extract')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.emptyAddBtnText}>+ Add via WhatsApp</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* Secondary Cards */}
-      {rest.map((event) => {
-        const conf = EVENT_TYPE_CONFIG[event.type] || EVENT_TYPE_CONFIG.other;
+      {/* Secondary Items List */}
+      {rest.map((evt) => {
+        const typeConfig = EVENT_TYPE_CONFIG[evt.type] || EVENT_TYPE_CONFIG.other;
         return (
           <TouchableOpacity
-            key={event.id}
+            key={evt.id}
             style={styles.secondaryCard}
-            activeOpacity={0.8}
-            onPress={() => router.push(`/event/${event.id}`)}
+            onPress={() => router.push(`/event/${evt.id}`)}
+            activeOpacity={0.85}
           >
-            <View style={styles.secondaryTopRow}>
-              <View style={[styles.typeIndicator, { backgroundColor: conf.accentColor }]} />
-              <View style={styles.secondaryTextGroup}>
-                <Text style={styles.secondaryTitle} numberOfLines={1}>
-                  {event.title}
-                </Text>
-                <Text style={styles.secondarySubtitle} numberOfLines={1}>
-                  {event.source_group || event.location || conf.label}
-                </Text>
-              </View>
-              <Text style={styles.secondaryDaysLabel}>{getDaysLabel(event)}</Text>
+            <View
+              style={[
+                styles.secondaryIconWrap,
+                { backgroundColor: typeConfig.badgeBg },
+              ]}
+            >
+              <Ionicons
+                name={typeConfig.icon as any}
+                size={16}
+                color={typeConfig.accentColor}
+              />
             </View>
 
-            <View style={styles.secondaryBottomRow}>
-              {event.time && (
-                <View style={styles.secondaryTimePill}>
-                  <Ionicons name="time-outline" size={12} color="#64748B" />
-                  <Text style={styles.secondaryTimeText}>{formatTime(event.time)}</Text>
-                </View>
-              )}
-
-              <View style={styles.secondaryDatePill}>
-                <Ionicons name="calendar-outline" size={12} color="#64748B" />
-                <Text style={styles.secondaryDateText}>
-                  {event.event_start_date
-                    ? formatFriendlyDate(event.event_start_date, false)
-                    : 'Date TBD'}
-                </Text>
-              </View>
+            <View style={styles.secondaryContent}>
+              <Text style={styles.secondaryTitle} numberOfLines={1}>
+                {evt.title}
+              </Text>
+              <Text style={styles.secondaryDate}>
+                {formatFriendlyDate(evt.event_start_date, false)} • {formatTime(evt.time)}
+              </Text>
             </View>
+
+            <Ionicons name="chevron-forward" size={14} color="#94A3B8" />
           </TouchableOpacity>
         );
       })}
@@ -179,206 +205,181 @@ export const FutureEventsWidget: React.FC<FutureEventsWidgetProps> = ({ events }
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
     flex: 1,
     minWidth: 280,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.85)',
+    ...THEME_DESIGN.shadows.card,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  headerTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
     color: '#0F172A',
+    letterSpacing: -0.3,
   },
   viewAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
   },
   viewAllText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
+    fontWeight: '700',
+    color: '#4F46E5',
   },
   featuredCard: {
-    backgroundColor: '#FDE047',
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#CA8A04',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 2,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+    gap: 12,
   },
   featuredTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    gap: 8,
   },
   featuredTitleGroup: {
     flex: 1,
-    marginRight: 8,
+    gap: 5,
+  },
+  featuredBadgeRow: {
+    flexDirection: 'row',
+  },
+  typeBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 7,
+  },
+  typeBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   featuredTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
-    color: '#713F12',
-  },
-  featuredSubtitle: {
-    fontSize: 12,
-    color: '#854D0E',
-    marginTop: 2,
+    color: '#0F172A',
+    lineHeight: 19,
   },
   featuredCountdownBadge: {
-    backgroundColor: '#FEF08A',
+    backgroundColor: '#4F46E5',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 8,
+    ...THEME_DESIGN.shadows.glow,
   },
   featuredCountdownText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#854D0E',
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
   featuredBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
-  timePill: {
+  pillItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF08A',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 10,
+    borderRadius: 8,
     gap: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  timePillText: {
+  pillText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#713F12',
-  },
-  datePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF08A',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-    gap: 4,
-  },
-  datePillText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#713F12',
-  },
-  modePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF08A',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-    gap: 4,
-  },
-  modePillText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#713F12',
+    color: '#475569',
   },
   emptyFeatured: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 24,
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+    justifyContent: 'center',
+    paddingVertical: 24,
+    gap: 6,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    marginBottom: 8,
   },
   emptyText: {
     fontSize: 13,
     color: '#94A3B8',
+    fontWeight: '500',
+  },
+  emptyAddBtn: {
+    marginTop: 4,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  emptyAddBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4F46E5',
   },
   secondaryCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  secondaryTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    marginTop: 6,
+    gap: 10,
   },
-  typeIndicator: {
-    width: 4,
+  secondaryIconWrap: {
+    width: 32,
     height: 32,
-    borderRadius: 2,
-    marginRight: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  secondaryTextGroup: {
+  secondaryContent: {
     flex: 1,
   },
   secondaryTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#1E293B',
   },
-  secondarySubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  secondaryDaysLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  secondaryBottomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginLeft: 14,
-  },
-  secondaryTimePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  secondaryTimeText: {
+  secondaryDate: {
     fontSize: 11,
     color: '#64748B',
-  },
-  secondaryDatePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  secondaryDateText: {
-    fontSize: 11,
-    color: '#64748B',
+    marginTop: 2,
   },
 });

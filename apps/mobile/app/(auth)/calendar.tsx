@@ -15,24 +15,25 @@ import { useEvents } from '../../src/context/EventsContext';
 import { SidebarRail } from '../../src/components/SidebarRail';
 import { TimelineGrid } from '../../src/components/TimelineGrid';
 import { ClashBanner } from '../../src/components/ClashBanner';
+import { GlassCard } from '../../src/components/ui/GlassCard';
+import { colors, radii, spacing, shadows } from '../../src/theme/tokens';
 import {
   CalendarEvent,
   EVENT_TYPE_CONFIG,
   formatFriendlyDate,
   getTodayISODate,
-  getUrgencyInfo,
 } from '@eventpulse/shared';
 
 export default function CalendarScreen() {
   const router = useRouter();
   const { events, clashes, removeEvent } = useEvents();
 
-  const [viewMode, setViewMode] = useState<'timeline' | 'month' | 'agenda'>('timeline');
+  const [viewMode, setViewMode] = useState<'timeline' | 'month' | 'agenda'>('month');
   const [currentMonthDate, setCurrentMonthDate] = useState<Date>(new Date());
   const [selectedDayISO, setSelectedDayISO] = useState<string>(getTodayISODate());
 
   const handleDeleteEvent = (eventId: string, eventTitle: string) => {
-    Alert.alert('Delete Event', `Are you sure you want to remove "${eventTitle}" from your calendar?`, [
+    Alert.alert('Delete Event', `Are you sure you want to remove "${eventTitle}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -44,7 +45,7 @@ export default function CalendarScreen() {
     ]);
   };
 
-  // Generate days for Month Grid
+  // Month Grid calculations
   const monthCalendarData = useMemo(() => {
     const year = currentMonthDate.getFullYear();
     const month = currentMonthDate.getMonth();
@@ -64,7 +65,7 @@ export default function CalendarScreen() {
       deadlines: CalendarEvent[];
     }[] = [];
 
-    // Padding for previous month
+    // Previous month padding
     for (let i = 0; i < startingDayOfWeek; i++) {
       days.push({
         dayNum: null,
@@ -76,7 +77,6 @@ export default function CalendarScreen() {
       });
     }
 
-    // Days in current month
     const activeEvents = events.filter((e) => e.status !== 'skipped');
 
     for (let d = 1; d <= totalDays; d++) {
@@ -84,11 +84,9 @@ export default function CalendarScreen() {
       const iso = getTodayISODate(dateObj);
       const isToday = iso === getTodayISODate();
 
-      // Events happening on this day (including multi-day events)
       const dayEvents = activeEvents.filter((e) => {
         if (!e.event_start_date) return false;
         if (e.event_start_date === iso) return true;
-        // Multi-day event: check if iso falls between start and end
         if (e.event_end_date && e.event_start_date <= iso && e.event_end_date >= iso) {
           return true;
         }
@@ -143,183 +141,162 @@ export default function CalendarScreen() {
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header Card */}
-          <View style={styles.headerCard}>
-            <View style={styles.headerLeft}>
+          {/* iOS-Style Minimal Navigation Bar */}
+          <View style={styles.navBar}>
+            <View style={styles.navBarLeft}>
               <TouchableOpacity
                 style={styles.backBtn}
                 onPress={() => router.push('/')}
+                activeOpacity={0.7}
               >
-                <Ionicons name="arrow-back" size={18} color="#64748B" />
+                <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
               </TouchableOpacity>
               <View>
-                <Text style={styles.headerTitle}>Google Calendar View</Text>
-                <Text style={styles.headerSubtitle}>
-                  Visual schedule, timeline tracks & clash detection
+                <Text style={styles.screenTitle}>Calendar</Text>
+                <Text style={styles.screenSubtitle}>
+                  Schedule & dead-line timeline
                 </Text>
               </View>
             </View>
 
-            {/* View Mode Switcher Pills */}
-            <View style={styles.viewModePills}>
-              {(['timeline', 'month', 'agenda'] as const).map((mode) => (
-                <TouchableOpacity
-                  key={mode}
+            <TouchableOpacity
+              style={styles.addEventBtn}
+              onPress={() => router.push('/extract')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* iOS-Style Full-Width Segmented Control */}
+          <View style={styles.segmentedControl}>
+            {(['month', 'timeline', 'agenda'] as const).map((mode) => (
+              <TouchableOpacity
+                key={mode}
+                style={[
+                  styles.segmentTab,
+                  viewMode === mode && styles.segmentTabActive,
+                ]}
+                onPress={() => setViewMode(mode)}
+                activeOpacity={0.7}
+              >
+                <Text
                   style={[
-                    styles.viewPill,
-                    viewMode === mode && styles.viewPillActive,
+                    styles.segmentText,
+                    viewMode === mode && styles.segmentTextActive,
                   ]}
-                  onPress={() => setViewMode(mode)}
                 >
-                  <Text
-                    style={[
-                      styles.viewPillText,
-                      viewMode === mode && styles.viewPillTextActive,
-                    ]}
-                  >
-                    {mode === 'timeline'
-                      ? 'Timeline'
-                      : mode === 'month'
-                      ? 'Month Grid'
-                      : 'Agenda'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                  {mode === 'month'
+                    ? 'Month'
+                    : mode === 'timeline'
+                    ? 'Timeline'
+                    : 'Agenda'}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
           {/* Clash Alert Banner */}
           {clashes.length > 0 && <ClashBanner clashes={clashes} />}
 
-          {/* VIEW MODE 1: TIMELINE GRID */}
-          {viewMode === 'timeline' && (
-            <TimelineGrid
-              events={events}
-              onSelectEvent={(event) => router.push(`/event/${event.id}`)}
-            />
-          )}
-
-          {/* VIEW MODE 2: GOOGLE CALENDAR MONTH GRID */}
+          {/* VIEW MODE 1: MONTH GRID (Apple Calendar Style) */}
           {viewMode === 'month' && (
-            <View style={styles.monthCard}>
-              {/* Month Navigation Bar */}
+            <GlassCard contentStyle={styles.monthCardContent}>
+              {/* Month Navigation Row */}
               <View style={styles.monthNavRow}>
-                <View style={styles.monthTitleGroup}>
-                  <Text style={styles.monthTitle}>
+                <View style={styles.monthTitleRow}>
+                  <Text style={styles.monthHeading}>
                     {currentMonthDate.toLocaleDateString('en-US', {
                       month: 'long',
                       year: 'numeric',
                     })}
                   </Text>
                   <TouchableOpacity
-                    style={styles.todayJumpBtn}
+                    style={styles.todayPill}
                     onPress={() => {
                       setCurrentMonthDate(new Date());
                       setSelectedDayISO(getTodayISODate());
                     }}
+                    activeOpacity={0.7}
                   >
-                    <Text style={styles.todayJumpText}>Today</Text>
+                    <Text style={styles.todayPillText}>Today</Text>
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.monthArrows}>
+                <View style={styles.monthNavArrows}>
                   <TouchableOpacity
-                    style={styles.arrowBtn}
+                    style={styles.navArrowBtn}
                     onPress={() => changeMonth(-1)}
+                    activeOpacity={0.7}
                   >
-                    <Ionicons name="chevron-back" size={18} color="#64748B" />
+                    <Ionicons name="chevron-back" size={16} color={colors.textPrimary} />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.arrowBtn}
+                    style={styles.navArrowBtn}
                     onPress={() => changeMonth(1)}
+                    activeOpacity={0.7}
                   >
-                    <Ionicons name="chevron-forward" size={18} color="#64748B" />
+                    <Ionicons name="chevron-forward" size={16} color={colors.textPrimary} />
                   </TouchableOpacity>
                 </View>
               </View>
 
               {/* Day of Week Headers */}
-              <View style={styles.weekHeadersRow}>
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                  <View key={d} style={styles.weekHeaderCol}>
-                    <Text style={styles.weekHeaderText}>{d}</Text>
+              <View style={styles.weekdaysRow}>
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, idx) => (
+                  <View key={idx} style={styles.weekdayCol}>
+                    <Text style={styles.weekdayText}>{day}</Text>
                   </View>
                 ))}
               </View>
 
-              {/* Month Grid Cells */}
-              <View style={styles.monthGrid}>
+              {/* Day Grid Matrix */}
+              <View style={styles.gridMatrix}>
                 {monthCalendarData.map((day, idx) => {
                   if (!day.dayNum || !day.iso) {
-                    return <View key={`empty_${idx}`} style={styles.emptyDayCell} />;
+                    return <View key={`empty_${idx}`} style={styles.emptyGridCell} />;
                   }
 
                   const isSelected = day.iso === selectedDayISO;
-                  const hasActivity =
-                    day.events.length > 0 || day.deadlines.length > 0;
+                  const hasEvents = day.events.length > 0;
+                  const hasDeadlines = day.deadlines.length > 0;
 
                   return (
                     <TouchableOpacity
                       key={day.iso}
                       style={[
-                        styles.dayCell,
-                        day.isToday && styles.todayCell,
-                        isSelected && styles.selectedDayCell,
+                        styles.dayGridCell,
+                        isSelected && styles.dayGridCellSelected,
                       ]}
-                      activeOpacity={0.8}
                       onPress={() => setSelectedDayISO(day.iso!)}
+                      activeOpacity={0.7}
                     >
                       <View
                         style={[
-                          styles.dayNumberBubble,
-                          day.isToday && styles.todayNumberBubble,
+                          styles.dayNumberCircle,
+                          day.isToday && styles.dayTodayCircle,
+                          isSelected && !day.isToday && styles.daySelectedCircle,
                         ]}
                       >
                         <Text
                           style={[
-                            styles.dayNumberText,
-                            day.isToday && styles.todayNumberText,
+                            styles.dayNumberLabel,
+                            day.isToday && styles.dayTodayLabel,
+                            isSelected && !day.isToday && styles.daySelectedLabel,
                           ]}
                         >
                           {day.dayNum}
                         </Text>
                       </View>
 
-                      {/* Event Chips / Dots */}
-                      <View style={styles.eventDotsContainer}>
-                        {day.deadlines.map((dl) => (
-                          <View
-                            key={`dl_${dl.id}`}
-                            style={styles.deadlineDotPill}
-                          >
-                            <Text style={styles.deadlineDotText} numberOfLines={1}>
-                              ⚠️ {dl.title}
-                            </Text>
-                          </View>
-                        ))}
-                        {day.events.map((ev) => {
-                          const conf =
-                            EVENT_TYPE_CONFIG[ev.type] || EVENT_TYPE_CONFIG.other;
-                          return (
-                            <View
-                              key={`ev_${ev.id}`}
-                              style={[
-                                styles.eventDotPill,
-                                { backgroundColor: conf.badgeBg },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.eventDotText,
-                                  { color: conf.badgeText },
-                                ]}
-                                numberOfLines={1}
-                              >
-                                {ev.title}
-                              </Text>
-                            </View>
-                          );
-                        })}
+                      {/* Clean Minimalist Micro Indicator Dots (No emojis) */}
+                      <View style={styles.microDotsRow}>
+                        {hasEvents && (
+                          <View style={[styles.microDot, { backgroundColor: colors.primary }]} />
+                        )}
+                        {hasDeadlines && (
+                          <View style={[styles.microDot, { backgroundColor: colors.warning }]} />
+                        )}
                       </View>
                     </TouchableOpacity>
                   );
@@ -327,176 +304,127 @@ export default function CalendarScreen() {
               </View>
 
               {/* Day Inspector Panel */}
-              <View style={styles.inspectorPanel}>
-                <View style={styles.inspectorHeaderRow}>
-                  <Text style={styles.inspectorTitle}>
-                    Schedule for {formatFriendlyDate(selectedDayISO)}
+              <View style={styles.dayInspectorSection}>
+                <View style={styles.inspectorHeader}>
+                  <Text style={styles.inspectorDateTitle}>
+                    {formatFriendlyDate(selectedDayISO)}
                   </Text>
-                  <TouchableOpacity
-                    style={styles.inspectorAddBtn}
-                    onPress={() => router.push('/extract')}
-                  >
-                    <Ionicons name="add" size={14} color="#3B82F6" />
-                    <Text style={styles.inspectorAddText}>Paste WhatsApp</Text>
-                  </TouchableOpacity>
                 </View>
 
                 {selectedDayActivity.dayDeadlines.length === 0 &&
                 selectedDayActivity.dayEvents.length === 0 ? (
-                  <View style={styles.emptyInspectorBox}>
-                    <Ionicons name="calendar-outline" size={24} color="#94A3B8" />
-                    <Text style={styles.emptyInspectorText}>
-                      No events scheduled on this day.
+                  <View style={styles.emptyDayInspector}>
+                    <Ionicons name="calendar-outline" size={22} color={colors.textSecondary} />
+                    <Text style={styles.emptyDayText}>
+                      No events or deadlines on this date
                     </Text>
                   </View>
                 ) : (
-                  <View style={styles.inspectorList}>
+                  <View style={styles.inspectorEventsList}>
                     {selectedDayActivity.dayDeadlines.map((dl) => (
-                      <View key={dl.id} style={styles.inspectorDeadlineCard}>
-                        <TouchableOpacity
-                          style={styles.inspectorCardMain}
-                          onPress={() => router.push(`/event/${dl.id}`)}
-                        >
-                          <Ionicons name="alarm" size={16} color="#D97706" />
-                          <View style={{ flex: 1, marginLeft: 8 }}>
-                            <Text style={styles.inspectorEventTitle} numberOfLines={1}>
-                              Registration Deadline: {dl.title}
-                            </Text>
-                            <Text style={styles.inspectorEventSub}>
-                              Event on{' '}
-                              {dl.event_start_date
-                                ? formatFriendlyDate(dl.event_start_date)
-                                : 'TBD'}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.inspectorDeleteBtn}
-                          onPress={() => handleDeleteEvent(dl.id, dl.title)}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                        </TouchableOpacity>
-                      </View>
+                      <TouchableOpacity
+                        key={dl.id}
+                        style={styles.inspectorItemCard}
+                        onPress={() => router.push(`/event/${dl.id}`)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={[styles.itemTypeBadge, { backgroundColor: colors.warningLight }]}>
+                          <Ionicons name="alarm-outline" size={16} color={colors.warning} />
+                        </View>
+                        <View style={styles.itemTextContainer}>
+                          <Text style={styles.itemTitle} numberOfLines={1}>
+                            {dl.title}
+                          </Text>
+                          <Text style={styles.itemMeta}>
+                            Deadline • Registration closing
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={16} color="#C7C7CC" />
+                      </TouchableOpacity>
                     ))}
 
-                    {selectedDayActivity.dayEvents.map((ev) => (
-                      <View key={ev.id} style={styles.inspectorEventCard}>
+                    {selectedDayActivity.dayEvents.map((ev) => {
+                      const conf = EVENT_TYPE_CONFIG[ev.type] || EVENT_TYPE_CONFIG.other;
+                      return (
                         <TouchableOpacity
-                          style={styles.inspectorCardMain}
+                          key={ev.id}
+                          style={styles.inspectorItemCard}
                           onPress={() => router.push(`/event/${ev.id}`)}
+                          activeOpacity={0.8}
                         >
-                          <Ionicons name="calendar" size={16} color="#3B82F6" />
-                          <View style={{ flex: 1, marginLeft: 8 }}>
-                            <Text style={styles.inspectorEventTitle} numberOfLines={1}>
+                          <View style={[styles.itemTypeBadge, { backgroundColor: colors.primaryLight }]}>
+                            <Ionicons name="sparkles-outline" size={16} color={colors.primary} />
+                          </View>
+                          <View style={styles.itemTextContainer}>
+                            <Text style={styles.itemTitle} numberOfLines={1}>
                               {ev.title}
                             </Text>
-                            <Text style={styles.inspectorEventSub}>
-                              {ev.time || 'All Day'} • {ev.mode.toUpperCase()}
+                            <Text style={styles.itemMeta}>
+                              {conf.label} • {ev.mode === 'online' ? 'Online' : ev.location || 'In-Person'}
                             </Text>
                           </View>
+                          <Ionicons name="chevron-forward" size={16} color="#C7C7CC" />
                         </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.inspectorDeleteBtn}
-                          onPress={() => handleDeleteEvent(ev.id, ev.title)}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 )}
               </View>
-            </View>
+            </GlassCard>
+          )}
+
+          {/* VIEW MODE 2: TIMELINE */}
+          {viewMode === 'timeline' && (
+            <TimelineGrid
+              events={events}
+              onSelectEvent={(event) => router.push(`/event/${event.id}`)}
+            />
           )}
 
           {/* VIEW MODE 3: AGENDA LIST */}
           {viewMode === 'agenda' && (
-            <View style={styles.agendaCard}>
-              <Text style={styles.agendaSectionHeader}>Chronological Feed</Text>
-              {[...events]
-                .filter((e) => e.status !== 'skipped')
-                .sort((a, b) => {
-                  const aDate = a.event_start_date || a.registration_deadline || '';
-                  const bDate = b.event_start_date || b.registration_deadline || '';
-                  return aDate.localeCompare(bDate);
-                })
-                .map((event) => {
-                const urgency = getUrgencyInfo(event);
-                const conf = EVENT_TYPE_CONFIG[event.type] || EVENT_TYPE_CONFIG.other;
-
-                return (
-                  <View key={event.id} style={styles.agendaItem}>
-                    <TouchableOpacity
-                      style={styles.agendaMainClickable}
-                      activeOpacity={0.8}
-                      onPress={() => router.push(`/event/${event.id}`)}
-                    >
-                      <View
-                        style={[
-                          styles.agendaIconCircle,
-                          { backgroundColor: conf.badgeBg },
-                        ]}
-                      >
-                        <Ionicons
-                          name={conf.icon as any}
-                          size={18}
-                          color={conf.accentColor}
-                        />
-                      </View>
-
-                      <View style={styles.agendaTextCol}>
-                        <Text style={styles.agendaTitle}>{event.title}</Text>
-                        <Text style={styles.agendaSub}>
-                          {event.event_start_date
-                            ? formatFriendlyDate(event.event_start_date)
-                            : 'TBD'}{' '}
-                          • {event.time || 'All Day'} • {event.mode.charAt(0).toUpperCase() + event.mode.slice(1)}
-                        </Text>
-                        {event.registration_deadline && (
-                          <Text style={styles.agendaDeadlineHighlight}>
-                            ⚠️ Register by: {formatFriendlyDate(event.registration_deadline)}
-                          </Text>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-
-                    <View style={styles.agendaActionsCol}>
-                      <View
-                        style={[
-                          styles.agendaUrgencyBadge,
-                          urgency.urgencyLevel === 'critical' &&
-                            styles.agendaUrgencyCritical,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.agendaUrgencyText,
-                            urgency.urgencyLevel === 'critical' &&
-                              styles.agendaUrgencyTextCritical,
-                          ]}
-                        >
-                          {urgency.daysRemaining === 0
-                            ? 'Today'
-                            : urgency.daysRemaining > 0
-                            ? `${urgency.daysRemaining}d`
-                            : 'Past'}
-                        </Text>
-                      </View>
-
+            <GlassCard contentStyle={styles.agendaCardContent}>
+              <Text style={styles.agendaHeading}>Upcoming Schedule</Text>
+              {events.length === 0 ? (
+                <View style={styles.emptyDayInspector}>
+                  <Ionicons name="calendar-outline" size={24} color={colors.textSecondary} />
+                  <Text style={styles.emptyDayText}>No scheduled events yet</Text>
+                </View>
+              ) : (
+                <View style={styles.agendaList}>
+                  {events
+                    .filter((e) => e.status !== 'skipped')
+                    .map((ev) => (
                       <TouchableOpacity
-                        style={styles.agendaDeleteBtn}
-                        onPress={() => handleDeleteEvent(event.id, event.title)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        key={ev.id}
+                        style={styles.agendaListItem}
+                        onPress={() => router.push(`/event/${ev.id}`)}
+                        activeOpacity={0.8}
                       >
-                        <Ionicons name="trash-outline" size={16} color="#94A3B8" />
+                        <View style={styles.agendaDateCol}>
+                          <Text style={styles.agendaDateDay}>
+                            {ev.event_start_date ? ev.event_start_date.split('-')[2] : '--'}
+                          </Text>
+                          <Text style={styles.agendaDateMonth}>
+                            {ev.event_start_date
+                              ? new Date(ev.event_start_date).toLocaleDateString('en-US', { month: 'short' })
+                              : ''}
+                          </Text>
+                        </View>
+                        <View style={styles.agendaDetailsCol}>
+                          <Text style={styles.agendaTitle} numberOfLines={1}>
+                            {ev.title}
+                          </Text>
+                          <Text style={styles.agendaMeta}>
+                            {ev.type.toUpperCase()} • {ev.mode.toUpperCase()}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={16} color="#C7C7CC" />
                       </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
+                    ))}
+                </View>
+              )}
+            </GlassCard>
           )}
         </ScrollView>
       </View>
@@ -507,400 +435,338 @@ export default function CalendarScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#EEF2F6',
+    backgroundColor: colors.canvas,
   },
   layoutWrapper: {
     flex: 1,
-    flexDirection: 'row',
-    backgroundColor: '#EEF2F6',
+    backgroundColor: colors.canvas,
   },
   mainScroll: {
     flex: 1,
   },
   contentContainer: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 48,
+    gap: 14,
   },
-  headerCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    marginBottom: 12,
+  navBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 12,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
+    paddingVertical: 4,
   },
-  headerLeft: {
+  navBarLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F8FAFC',
+    width: 38,
+    height: 38,
+    borderRadius: radii.pill,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
+  screenTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+    lineHeight: 26,
+    flexShrink: 1,
   },
-  headerSubtitle: {
+  screenSubtitle: {
     fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    lineHeight: 16,
+    flexShrink: 1,
   },
-  viewModePills: {
+  addEventBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 20,
+    backgroundColor: '#EBEBED',
+    borderRadius: radii.control,
     padding: 3,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
-  viewPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
+  segmentTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.control - 3,
+    minHeight: 36,
   },
-  viewPillActive: {
+  segmentTabActive: {
     backgroundColor: '#FFFFFF',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.04)',
+    ...shadows.subtle,
   },
-  viewPillText: {
+  segmentText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
+    fontWeight: '500',
+    color: colors.textSecondary,
+    lineHeight: 16,
+    flexShrink: 1,
   },
-  viewPillTextActive: {
-    color: '#3B82F6',
+  segmentTextActive: {
+    color: colors.textPrimary,
     fontWeight: '700',
   },
-  monthCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
+  monthCardContent: {
+    padding: 16,
+    gap: 16,
   },
   monthNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
   },
-  monthTitleGroup: {
+  monthTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
-  monthTitle: {
-    fontSize: 18,
+  monthHeading: {
+    fontSize: 17,
     fontWeight: '700',
-    color: '#0F172A',
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
+    lineHeight: 22,
+    flexShrink: 1,
   },
-  todayJumpBtn: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+  todayPill: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
   },
-  todayJumpText: {
+  todayPillText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#3B82F6',
+    color: colors.primary,
+    lineHeight: 14,
   },
-  monthArrows: {
+  monthNavArrows: {
     flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    gap: 4,
   },
-  arrowBtn: {
-    padding: 6,
+  navArrowBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  weekHeadersRow: {
+  weekdaysRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 8,
-    marginBottom: 8,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
   },
-  weekHeaderCol: {
-    flex: 1,
+  weekdayCol: {
+    width: '14.28%',
     alignItems: 'center',
   },
-  weekHeaderText: {
-    fontSize: 12,
+  weekdayText: {
+    fontSize: 11,
     fontWeight: '600',
-    color: '#94A3B8',
+    color: colors.textSecondary,
+    lineHeight: 14,
   },
-  monthGrid: {
+  gridMatrix: {
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
-  emptyDayCell: {
+  emptyGridCell: {
     width: '14.28%',
-    height: 76,
+    height: 48,
   },
-  dayCell: {
+  dayGridCell: {
     width: '14.28%',
-    minHeight: 76,
-    padding: 4,
-    borderWidth: 0.5,
-    borderColor: '#F1F5F9',
-    borderRadius: 8,
-  },
-  todayCell: {
-    backgroundColor: '#EFF6FF20',
-  },
-  selectedDayCell: {
-    borderColor: '#3B82F6',
-    borderWidth: 1.5,
-    backgroundColor: '#EFF6FF40',
-  },
-  dayNumberBubble: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
+    borderRadius: 8,
   },
-  todayNumberBubble: {
-    backgroundColor: '#3B82F6',
+  dayGridCellSelected: {
+    backgroundColor: 'rgba(79, 70, 229, 0.06)',
   },
-  dayNumberText: {
-    fontSize: 11,
+  dayNumberCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayTodayCircle: {
+    backgroundColor: colors.primary,
+  },
+  daySelectedCircle: {
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  dayNumberLabel: {
+    fontSize: 13,
     fontWeight: '600',
-    color: '#334155',
+    color: colors.textPrimary,
+    lineHeight: 16,
   },
-  todayNumberText: {
+  dayTodayLabel: {
     color: '#FFFFFF',
     fontWeight: '700',
   },
-  eventDotsContainer: {
-    gap: 2,
-  },
-  deadlineDotPill: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  deadlineDotText: {
-    fontSize: 9,
+  daySelectedLabel: {
+    color: colors.primary,
     fontWeight: '700',
-    color: '#B45309',
   },
-  eventDotPill: {
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
+  microDotsRow: {
+    flexDirection: 'row',
+    gap: 3,
+    marginTop: 2,
+    height: 4,
   },
-  eventDotText: {
-    fontSize: 9,
-    fontWeight: '600',
+  microDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
   },
-  inspectorPanel: {
-    marginTop: 20,
-    paddingTop: 16,
+  dayInspectorSection: {
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  inspectorHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  inspectorTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  inspectorAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    gap: 4,
-  },
-  inspectorAddText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#3B82F6',
-  },
-  emptyInspectorBox: {
-    paddingVertical: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  emptyInspectorText: {
-    fontSize: 13,
-    color: '#94A3B8',
-  },
-  inspectorList: {
-    gap: 8,
-  },
-  inspectorDeadlineCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    justifyContent: 'space-between',
-  },
-  inspectorEventCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    justifyContent: 'space-between',
-  },
-  inspectorCardMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  inspectorDeleteBtn: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: '#FEE2E2',
-    marginLeft: 8,
-  },
-  inspectorEventTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  inspectorEventSub: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  agendaCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-  },
-  agendaSectionHeader: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 16,
-  },
-  agendaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
-    justifyContent: 'space-between',
+    borderColor: 'rgba(0, 0, 0, 0.06)',
     gap: 10,
   },
-  agendaMainClickable: {
-    flex: 1,
+  inspectorHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  inspectorDateTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    lineHeight: 18,
+    flexShrink: 1,
+  },
+  emptyDayInspector: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 6,
+  },
+  emptyDayText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    lineHeight: 16,
+  },
+  inspectorEventsList: {
+    gap: 8,
+  },
+  inspectorItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
     gap: 12,
   },
-  agendaIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  itemTypeBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  agendaTextCol: {
+  itemTextContainer: {
     flex: 1,
+    gap: 2,
   },
-  agendaTitle: {
-    fontSize: 14,
+  itemTitle: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#0F172A',
+    color: colors.textPrimary,
+    lineHeight: 17,
+    flexShrink: 1,
   },
-  agendaSub: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  agendaDeadlineHighlight: {
+  itemMeta: {
     fontSize: 11,
-    fontWeight: '600',
-    color: '#D97706',
-    marginTop: 2,
+    color: colors.textSecondary,
+    lineHeight: 14,
+    flexShrink: 1,
   },
-  agendaActionsCol: {
+  agendaCardContent: {
+    padding: 16,
+    gap: 14,
+  },
+  agendaHeading: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+  agendaList: {
+    gap: 10,
+  },
+  agendaListItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+    gap: 12,
   },
-  agendaDeleteBtn: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
+  agendaDateCol: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 38,
   },
-  agendaUrgencyBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
+  agendaDateDay: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.primary,
+    lineHeight: 22,
   },
-  agendaUrgencyCritical: {
-    backgroundColor: '#FEE2E2',
-  },
-  agendaUrgencyText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  agendaUrgencyTextCritical: {
-    color: '#DC2626',
+  agendaDateMonth: {
+    fontSize: 10,
     fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  agendaDetailsCol: {
+    flex: 1,
+    gap: 2,
+  },
+  agendaTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    lineHeight: 17,
+    flexShrink: 1,
+  },
+  agendaMeta: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    letterSpacing: 0.3,
   },
 });

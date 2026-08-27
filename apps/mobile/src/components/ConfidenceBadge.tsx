@@ -12,15 +12,15 @@ export const ConfidenceBadge: React.FC<ConfidenceBadgeProps> = ({ score }) => {
   const isLow = score < CONFIDENCE_LOW_THRESHOLD;
   const isHigh = score >= 0.85;
 
-  const color = isLow ? '#F59E0B' : isHigh ? '#10B981' : '#38BDF8';
-  const bgColor = isLow ? '#F59E0B15' : isHigh ? '#10B98115' : '#38BDF815';
+  const color = isLow ? '#F59E0B' : isHigh ? '#10B981' : '#4F46E5';
+  const bgColor = isLow ? '#FFFBEB' : isHigh ? '#ECFDF5' : '#EEF2FF';
   const iconName = isLow ? 'alert-circle-outline' : isHigh ? 'sparkles' : 'checkmark-circle-outline';
 
   return (
-    <View style={[styles.container, { backgroundColor: bgColor, borderColor: `${color}40` }]}>
-      <Ionicons name={iconName as any} size={12} color={color} style={{ marginRight: 4 }} />
+    <View style={[styles.container, { backgroundColor: bgColor, borderColor: `${color}35` }]}>
+      <Ionicons name={iconName as any} size={11} color={color} style={{ marginRight: 4 }} />
       <Text style={[styles.text, { color }]}>
-        {isLow ? `AI: ${percentage}% (Review)` : `AI: ${percentage}%`}
+        {isLow ? `AI: ${percentage}% (Check)` : `AI: ${percentage}%`}
       </Text>
     </View>
   );
@@ -30,13 +30,14 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
   },
   text: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

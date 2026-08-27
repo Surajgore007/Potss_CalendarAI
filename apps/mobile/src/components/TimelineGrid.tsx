@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Platform,
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,7 +14,7 @@ import {
   EventType,
   EVENT_TYPE_CONFIG,
   getTodayISODate,
-  getDaysDifference,
+  THEME_DESIGN,
 } from '@eventpulse/shared';
 
 interface TimelineGridProps {
@@ -38,36 +37,43 @@ const CATEGORIES: SwimlaneCategory[] = [
     type: 'hackathon',
     title: 'Hackathons',
     icon: 'code-slash',
-    color: '#8B5CF6',
-    bgColor: '#EDE9FE',
+    color: '#6366F1',
+    bgColor: '#EEF2FF',
   },
   {
     type: 'ctf',
-    title: 'CTF Challenges',
+    title: 'CTFs',
     icon: 'shield-checkmark',
-    color: '#EF4444',
-    bgColor: '#FEE2E2',
+    color: '#F43F5E',
+    bgColor: '#FFF1F2',
   },
   {
     type: 'meetup',
-    title: 'Tech Meetups',
+    title: 'Meetups',
     icon: 'people',
     color: '#10B981',
-    bgColor: '#D1FAE5',
+    bgColor: '#ECFDF5',
   },
   {
     type: 'workshop',
     title: 'Workshops',
     icon: 'school',
-    color: '#3B82F6',
-    bgColor: '#DBEAFE',
+    color: '#0EA5E9',
+    bgColor: '#F0F9FF',
+  },
+  {
+    type: 'deadline',
+    title: 'Deadlines',
+    icon: 'alarm',
+    color: '#F59E0B',
+    bgColor: '#FFFBEB',
   },
   {
     type: 'other',
-    title: 'Other Events',
+    title: 'Other',
     icon: 'calendar',
-    color: '#6B7280',
-    bgColor: '#F3F4F6',
+    color: '#64748B',
+    bgColor: '#F8FAFC',
   },
 ];
 
@@ -81,11 +87,11 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
   const [currentOffset, setCurrentOffset] = useState<number>(0);
 
   const isMobile = screenWidth < 768;
-  const CELL_WIDTH = isMobile ? 48 : 54;
-  const HEADER_LABEL_WIDTH = isMobile ? 140 : 210;
-  const DAY_COUNT = isMobile ? 10 : 16;
+  const CELL_WIDTH = isMobile ? 54 : 64;
+  const HEADER_LABEL_WIDTH = isMobile ? 95 : 170;
+  const DAY_COUNT = isMobile ? 12 : 18;
 
-  // Generate consecutive days for the Gantt timeline header
+  // Generate consecutive days for the timeline
   const timelineDays = useMemo(() => {
     const list: {
       date: Date;
@@ -97,7 +103,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
     }[] = [];
 
     const base = new Date();
-    base.setDate(base.getDate() - 2 + currentOffset * 7);
+    base.setDate(base.getDate() - 1 + currentOffset * 7);
 
     for (let i = 0; i < DAY_COUNT; i++) {
       const d = new Date(base);
@@ -137,35 +143,30 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
 
     return {
       left: startIndex * CELL_WIDTH,
-      width: Math.min(spanDays * CELL_WIDTH - 6, CELL_WIDTH * 5),
+      width: Math.min(spanDays * CELL_WIDTH - 4, CELL_WIDTH * 4),
     };
   };
 
-  // Only show categories that have events visible in timeline
   const visibleCategories = useMemo(() => {
-    return CATEGORIES.filter((category) => {
+    const cats = CATEGORIES.filter((category) => {
       return events.some((e) => {
         if (e.status === 'skipped') return false;
-        if (e.type !== category.type && category.type !== 'other') return false;
-        if (category.type === 'other' && ['hackathon', 'ctf', 'meetup', 'workshop'].includes(e.type)) return false;
-        return true;
+        if (category.type === 'deadline') {
+          return e.type === 'deadline' || !!e.registration_deadline;
+        }
+        return e.type === category.type;
       });
     });
+    return cats.length > 0 ? cats : CATEGORIES.slice(0, 3);
   }, [events]);
-
-  const todayIndex = timelineDays.findIndex((d) => d.isToday);
 
   return (
     <View style={styles.cardContainer}>
-      {/* Top Bar */}
+      {/* Header Bar */}
       <View style={styles.topHeader}>
         <View style={styles.titleGroup}>
-          <Text style={styles.sectionTitle}>Schedule Timeline</Text>
-          {!isMobile && (
-            <Text style={styles.sectionSubtitle}>
-              Your events across hackathons, meetups & deadlines
-            </Text>
-          )}
+          <Text style={styles.sectionTitle}>Timeline Matrix</Text>
+          <Text style={styles.sectionSubtitle}>Tap any event bar to view details</Text>
         </View>
 
         <View style={styles.controlsRow}>
@@ -173,45 +174,36 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
             <TouchableOpacity
               style={styles.arrowBtn}
               onPress={() => setCurrentOffset((prev) => prev - 1)}
+              activeOpacity={0.7}
             >
-              <Ionicons name="chevron-back" size={16} color="#64748B" />
+              <Ionicons name="chevron-back" size={14} color="#475569" />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.arrowBtn}
-              onPress={() => {
-                setCurrentOffset(0);
-              }}
+              style={[styles.arrowBtn, styles.todayBtn]}
+              onPress={() => setCurrentOffset(0)}
+              activeOpacity={0.7}
             >
               <Text style={styles.todayBtnText}>Today</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.arrowBtn}
               onPress={() => setCurrentOffset((prev) => prev + 1)}
+              activeOpacity={0.7}
             >
-              <Ionicons name="chevron-forward" size={16} color="#64748B" />
+              <Ionicons name="chevron-forward" size={14} color="#475569" />
             </TouchableOpacity>
           </View>
-
-          {onViewAllPress && (
-            <TouchableOpacity
-              style={styles.viewAllBtn}
-              onPress={onViewAllPress}
-            >
-              <Ionicons name="open-outline" size={14} color="#3B82F6" />
-              <Text style={styles.viewAllText}>Calendar</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 
-      {/* Timeline Scroll Area */}
+      {/* Gantt Scroll Container */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.timelineScrollContent}
       >
         <View style={styles.gridContainer}>
-          {/* Header Row (Day columns) */}
+          {/* Day Headers Row */}
           <View style={styles.gridHeaderRow}>
             <View style={[styles.headerCategorySpacer, { width: HEADER_LABEL_WIDTH }]} />
 
@@ -222,6 +214,7 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
                   styles.dayColumnHeader,
                   { width: CELL_WIDTH },
                   day.isWeekend && styles.weekendHeader,
+                  day.isToday && styles.todayColumnHeader,
                 ]}
               >
                 <Text
@@ -253,132 +246,118 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
             ))}
           </View>
 
-          {/* Swimlane Rows */}
+          {/* Category Swimlanes */}
           {visibleCategories.map((category) => {
             const categoryEvents = events.filter((e) => {
               if (e.status === 'skipped') return false;
-              if (category.type === 'other') {
-                return !['hackathon', 'ctf', 'meetup', 'workshop'].includes(e.type);
+              if (category.type === 'deadline') {
+                return e.type === 'deadline' || !!e.registration_deadline;
               }
               return e.type === category.type;
             });
 
-            const activeCount = categoryEvents.filter((e) => {
-              const d = e.event_start_date || e.registration_deadline;
-              return d && getDaysDifference(d) >= 0;
-            }).length;
-
             return (
               <View key={category.type} style={styles.swimlaneRow}>
-                {/* Category Info Left */}
-                <View style={[styles.categoryInfoCol, { width: HEADER_LABEL_WIDTH }]}>
-                  <View style={[styles.categoryIconCircle, { backgroundColor: category.bgColor }]}>
-                    <Ionicons name={category.icon as any} size={isMobile ? 14 : 18} color={category.color} />
+                {/* Left Category Label */}
+                <View style={[styles.swimlaneLabel, { width: HEADER_LABEL_WIDTH }]}>
+                  <View
+                    style={[
+                      styles.categoryIconWrap,
+                      { backgroundColor: category.bgColor },
+                    ]}
+                  >
+                    <Ionicons
+                      name={category.icon as any}
+                      size={13}
+                      color={category.color}
+                    />
                   </View>
-                  <View style={styles.categoryTextWrapper}>
-                    <Text style={styles.categoryTitle} numberOfLines={1}>{category.title}</Text>
-                    <Text style={styles.categorySubtitle} numberOfLines={1}>
-                      {activeCount} upcoming
-                    </Text>
-                  </View>
+                  <Text style={styles.swimlaneTitle} numberOfLines={1}>
+                    {category.title}
+                  </Text>
                 </View>
 
-                {/* Grid Cells Background */}
-                <View style={styles.swimlaneCellsContainer}>
+                {/* Day Track Cells */}
+                <View style={styles.trackCellsWrapper}>
                   {timelineDays.map((day) => (
                     <View
                       key={day.iso}
                       style={[
-                        styles.gridCell,
+                        styles.trackCell,
                         { width: CELL_WIDTH },
                         day.isWeekend && styles.weekendCell,
-                        day.isToday && styles.todayCell,
+                        day.isToday && styles.todayTrackCell,
                       ]}
                     />
                   ))}
 
                   {/* Render Event Pills */}
-                  {categoryEvents.map((event) => {
-                    const pos = getEventPosition(
-                      event.event_start_date,
-                      event.event_end_date,
-                    );
+                  {categoryEvents.map((evt) => {
+                    const targetStart =
+                      category.type === 'deadline'
+                        ? evt.registration_deadline || evt.event_start_date
+                        : evt.event_start_date;
+                    const targetEnd =
+                      category.type === 'deadline'
+                        ? evt.registration_deadline
+                        : evt.event_end_date || evt.event_start_date;
 
+                    const pos = getEventPosition(targetStart, targetEnd);
                     if (!pos) return null;
+
+                    const typeConfig = EVENT_TYPE_CONFIG[evt.type] || EVENT_TYPE_CONFIG.other;
 
                     return (
                       <TouchableOpacity
-                        key={event.id}
+                        key={evt.id}
                         style={[
                           styles.eventPill,
                           {
-                            left: pos.left + 3,
-                            width: Math.max(pos.width, isMobile ? 90 : 110),
-                            backgroundColor: category.color,
+                            left: pos.left + 2,
+                            width: pos.width,
+                            backgroundColor: typeConfig.badgeBg,
+                            borderColor: typeConfig.accentColor,
                           },
                         ]}
-                        activeOpacity={0.85}
-                        onPress={() => {
-                          if (onSelectEvent) onSelectEvent(event);
-                          else router.push(`/event/${event.id}`);
-                        }}
+                        onPress={() =>
+                          onSelectEvent
+                            ? onSelectEvent(evt)
+                            : router.push(`/event/${evt.id}` as any)
+                        }
+                        activeOpacity={0.88}
                       >
+                        <View
+                          style={[
+                            styles.eventPillDot,
+                            { backgroundColor: typeConfig.accentColor },
+                          ]}
+                        />
                         <Text
-                          style={styles.eventPillTitle}
+                          style={[
+                            styles.eventPillText,
+                            { color: typeConfig.badgeText },
+                          ]}
                           numberOfLines={1}
                         >
-                          {event.title}
+                          {evt.title}
                         </Text>
                       </TouchableOpacity>
                     );
                   })}
-
-                  {/* Render Registration Deadline markers */}
-                  {categoryEvents
-                    .filter((e) => e.registration_deadline)
-                    .map((event) => {
-                      const dlIndex = timelineDays.findIndex(
-                        (d) => d.iso === event.registration_deadline
-                      );
-                      if (dlIndex === -1) return null;
-
-                      return (
-                        <View
-                          key={`dl_${event.id}`}
-                          style={[
-                            styles.deadlineMarker,
-                            { left: dlIndex * CELL_WIDTH + CELL_WIDTH / 2 - 6 },
-                          ]}
-                        >
-                          <Ionicons name="flag" size={12} color="#D97706" />
-                        </View>
-                      );
-                    })}
                 </View>
               </View>
             );
           })}
 
-          {/* Empty state */}
-          {visibleCategories.length === 0 && (
-            <View style={styles.emptyTimeline}>
-              <Ionicons name="calendar-outline" size={24} color="#94A3B8" />
-              <Text style={styles.emptyTimelineText}>
-                No events to display. Paste a WhatsApp message to get started!
+          {/* Empty State */}
+          {events.filter((e) => e.status !== 'skipped').length === 0 && (
+            <View style={styles.emptyGridState}>
+              <Ionicons name="sparkles" size={24} color="#6366F1" />
+              <Text style={styles.emptyGridTitle}>No Events On Timeline</Text>
+              <Text style={styles.emptyGridSub}>
+                Paste any WhatsApp text to see real-time timeline tracks.
               </Text>
             </View>
-          )}
-
-          {/* Today Vertical Indicator Line */}
-          {todayIndex !== -1 && (
-            <View
-              style={[
-                styles.todayVerticalLine,
-                {
-                  left: HEADER_LABEL_WIDTH + todayIndex * CELL_WIDTH + CELL_WIDTH / 2,
-                },
-              ]}
-            />
           )}
         </View>
       </ScrollView>
@@ -389,234 +368,194 @@ export const TimelineGrid: React.FC<TimelineGridProps> = ({
 const styles = StyleSheet.create({
   cardContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 16,
-    marginVertical: 12,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
+    borderRadius: 22,
+    padding: 14,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-    overflow: 'hidden',
+    borderColor: 'rgba(226, 232, 240, 0.85)',
+    ...THEME_DESIGN.shadows.card,
   },
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   titleGroup: {
-    flex: 1,
-    minWidth: 150,
+    gap: 1,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
     color: '#0F172A',
     letterSpacing: -0.3,
   },
   sectionSubtitle: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#64748B',
-    marginTop: 2,
+    fontWeight: '500',
   },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   navArrowGroup: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#F8FAFC',
-    borderRadius: 20,
+    borderRadius: 10,
+    padding: 2,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    overflow: 'hidden',
   },
   arrowBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  todayBtn: {
+    backgroundColor: '#FFFFFF',
   },
   todayBtnText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#3B82F6',
-  },
-  viewAllBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    gap: 5,
-  },
-  viewAllText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#3B82F6',
+    color: '#0F172A',
   },
   timelineScrollContent: {
     paddingBottom: 4,
   },
   gridContainer: {
-    position: 'relative',
+    flexDirection: 'column',
   },
   gridHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 10,
+    borderColor: '#F1F5F9',
   },
   headerCategorySpacer: {
-    paddingLeft: 4,
+    paddingRight: 6,
   },
   dayColumnHeader: {
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 3,
   },
+  todayColumnHeader: {},
   weekendHeader: {
-    backgroundColor: '#FAFAFA',
-    borderRadius: 8,
+    opacity: 0.6,
   },
   dayNameText: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#94A3B8',
-    marginBottom: 4,
+    textTransform: 'uppercase',
   },
   todayDayName: {
-    color: '#3B82F6',
-    fontWeight: '700',
+    color: '#4F46E5',
+    fontWeight: '800',
   },
   weekendText: {
     color: '#CBD5E1',
   },
   dayNumBubble: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   todayDayNumBubble: {
-    backgroundColor: '#3B82F6',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 3,
+    backgroundColor: '#4F46E5',
   },
   dayNumText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#334155',
   },
   todayDayNumText: {
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: '800',
   },
   swimlaneRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
-    minHeight: 60,
+    borderColor: '#F8FAFC',
+    minHeight: 44,
   },
-  categoryInfoCol: {
+  swimlaneLabel: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingRight: 8,
+    gap: 6,
+    paddingRight: 6,
   },
-  categoryIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  categoryIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
   },
-  categoryTextWrapper: {
+  swimlaneTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1E293B',
     flex: 1,
   },
-  categoryTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  categorySubtitle: {
-    fontSize: 10,
-    color: '#94A3B8',
-    marginTop: 1,
-  },
-  swimlaneCellsContainer: {
+  trackCellsWrapper: {
     flexDirection: 'row',
     position: 'relative',
-    height: 60,
     alignItems: 'center',
   },
-  gridCell: {
-    height: '100%',
+  trackCell: {
+    height: 32,
     borderRightWidth: 1,
-    borderRightColor: '#F8FAFC',
+    borderColor: '#F8FAFC',
   },
   weekendCell: {
-    backgroundColor: '#F8FAFC40',
+    backgroundColor: 'rgba(248, 250, 252, 0.6)',
   },
-  todayCell: {
-    backgroundColor: '#EFF6FF30',
+  todayTrackCell: {
+    backgroundColor: 'rgba(238, 242, 255, 0.4)',
   },
   eventPill: {
     position: 'absolute',
-    height: 32,
-    borderRadius: 10,
+    height: 26,
+    borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    zIndex: 10,
+    paddingHorizontal: 6,
+    gap: 4,
+    borderWidth: 1,
+    zIndex: 2,
+    ...THEME_DESIGN.shadows.card,
   },
-  eventPillTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    flex: 1,
+  eventPillDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
   },
-  deadlineMarker: {
-    position: 'absolute',
-    top: 2,
-    zIndex: 11,
+  eventPillText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
-  todayVerticalLine: {
-    position: 'absolute',
-    top: 45,
-    bottom: 0,
-    width: 2,
-    backgroundColor: '#3B82F6',
-    zIndex: 5,
-    opacity: 0.5,
-  },
-  emptyTimeline: {
-    paddingVertical: 30,
-    paddingHorizontal: 20,
+  emptyGridState: {
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 24,
+    gap: 6,
   },
-  emptyTimelineText: {
+  emptyGridTitle: {
     fontSize: 13,
-    color: '#94A3B8',
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  emptyGridSub: {
+    fontSize: 11,
+    color: '#64748B',
     textAlign: 'center',
+    maxWidth: 260,
   },
 });

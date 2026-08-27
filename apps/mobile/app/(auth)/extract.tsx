@@ -1,50 +1,99 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
+  useWindowDimensions,
+  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SidebarRail } from '../../src/components/SidebarRail';
-import { useEvents } from '../../src/context/EventsContext';
 import {
-  extractEventsWithGemini,
+  extractEventsFromText,
+  getExtractionQuota,
+  ExtractedEvent,
+  ExtractionQuotaInfo,
   SAMPLE_WHATSAPP_MESSAGES,
 } from '@eventpulse/shared';
+import { useEvents } from '../../src/context/EventsContext';
+import { useAuth } from '../../src/context/AuthContext';
+import { SidebarRail } from '../../src/components/SidebarRail';
+import { GlassCard } from '../../src/components/ui/GlassCard';
+import { GlassButton } from '../../src/components/ui/GlassButton';
+import { GlassLoadingOverlay } from '../../src/components/ui/GlassLoadingOverlay';
+import { colors, radii, shadows } from '../../src/theme/tokens';
 
-export default function ExtractScreen() {
+export default function ExtractStudioScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
+
   const { setPendingExtractions, checkDuplicate } = useEvents();
+  const { getIdToken, isAdmin } = useAuth();
 
   const [rawText, setRawText] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [quotaInfo, setQuotaInfo] = useState<ExtractionQuotaInfo | null>(null);
+
+  // Load quota stats on mount
+  const refreshQuota = useCallback(async () => {
+    try {
+      const q = await getExtractionQuota({
+        getIdToken,
+        workerUrl: process.env.EXPO_PUBLIC_WORKER_URL || process.env.EXPO_PUBLIC_API_URL,
+      });
+      setQuotaInfo(q);
+    } catch {
+      // Ignored
+    }
+  }, [getIdToken]);
 
   useEffect(() => {
-    const textParam = (params?.text || params?.shared_text || params?.initialText) as string | undefined;
-    if (textParam && typeof textParam === 'string') {
-      const decoded = decodeURIComponent(textParam);
+    refreshQuota();
+  }, [refreshQuota]);
+
+  const lastExtractedTextRef = React.useRef<string>('');
+
+  // Load incoming deep link or initial text
+  useEffect(() => {
+    const textParam =
+      (params?.shared_text as string) ||
+      (params?.text as string) ||
+      (params?.initialText as string);
+
+    if (textParam) {
+      let decoded = textParam;
+      try {
+        decoded = decodeURIComponent(textParam);
+      } catch {
+        decoded = textParam;
+      }
       setRawText(decoded);
-      // If shared directly from WhatsApp or deep link, automatically trigger extraction
-      if (decoded.trim().length > 0 && (params?.autoExtract === 'true' || params?.shared_text || params?.text)) {
-        setTimeout(() => {
+      if (decoded.trim().length > 0 && lastExtractedTextRef.current !== decoded.trim()) {
+        lastExtractedTextRef.current = decoded.trim();
+        const timer = setTimeout(() => {
           performExtraction(decoded);
-        }, 100);
+        }, 250);
+        return () => clearTimeout(timer);
       }
     }
-  }, [params]);
+  }, [params?.text, params?.shared_text, params?.initialText]);
 
   const performExtraction = async (textToExtract: string) => {
     if (!textToExtract.trim()) {
-      setErrorMsg('Please paste a WhatsApp message first.');
+      setErrorMsg('Please enter or paste message text first.');
+      return;
+    }
+
+    if (!isAdmin && quotaInfo && quotaInfo.remaining <= 0) {
+      setErrorMsg("You've used today's 3 extractions. New ones unlock tomorrow.");
       return;
     }
 
@@ -52,18 +101,23 @@ export default function ExtractScreen() {
     setIsExtracting(true);
 
     try {
-      const response = await extractEventsWithGemini(textToExtract);
+      const response = await extractEventsFromText(textToExtract, {
+        getIdToken,
+        workerUrl: process.env.EXPO_PUBLIC_WORKER_URL || process.env.EXPO_PUBLIC_API_URL,
+      });
+
+      if (response.quota) {
+        setQuotaInfo(response.quota);
+      }
 
       if (!response.events || response.events.length === 0) {
-        setErrorMsg(
-          'Could not find any tech events or deadlines in this message. Please check the text.'
-        );
+        setErrorMsg('No upcoming events or dates found in this text. Try copying the full message.');
         setIsExtracting(false);
         return;
       }
 
-      // Run duplicate detection on all extracted events
-      const enrichedEvents = response.events.map((event) => {
+      // Enriched events with duplicate detection
+      const enrichedEvents = response.events.map((event: ExtractedEvent) => {
         const dupResult = checkDuplicate(event);
         return {
           ...event,
@@ -82,9 +136,25 @@ export default function ExtractScreen() {
     } catch (err: any) {
       console.error('Extraction failed:', err);
       setIsExtracting(false);
-      setErrorMsg(
-        err.message || 'Failed to extract events. Please check your Groq API key in .env.'
-      );
+      if (err.code === 'QUOTA_EXCEEDED' || err.status === 429) {
+        // Use server-returned quota if available, avoid hardcoded values
+        const serverQuota = err.quota || null;
+        const dailyLimit = serverQuota?.daily_quota ?? quotaInfo?.daily_quota ?? 3;
+        setErrorMsg(`You've used today's ${dailyLimit} extractions. New ones unlock tomorrow.`);
+        if (quotaInfo) {
+          setQuotaInfo({
+            ...quotaInfo,
+            remaining: 0,
+            used_today: serverQuota?.used_today ?? dailyLimit,
+          });
+        }
+      } else if (err.code === 'UNAUTHORIZED' || err.status === 401) {
+        setErrorMsg(err.message || 'Session expired or not signed in. Please sign in to use AI extraction.');
+      } else if (err.code === 'TIMEOUT' || err.status === 408) {
+        setErrorMsg('Extraction timed out. Please try with a slightly shorter text.');
+      } else {
+        setErrorMsg(err.message || 'Failed to extract schedule. Please check your connection and try again.');
+      }
     }
   };
 
@@ -102,144 +172,172 @@ export default function ExtractScreen() {
     setErrorMsg(null);
   };
 
+  const isQuotaExhausted = !isAdmin && quotaInfo !== null && quotaInfo.remaining <= 0;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <View style={styles.layoutWrapper}>
-        {Platform.OS === 'web' && (
-          <SidebarRail onExtractPress={() => {}} />
-        )}
+      {/* Full-screen Loading Overlay during AI extraction */}
+      <GlassLoadingOverlay
+        visible={isExtracting}
+        message="Curating your personalized schedule..."
+      />
 
-        <ScrollView
-          style={styles.mainScroll}
-          contentContainerStyle={styles.contentContainer}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Header */}
-          <View style={styles.headerCard}>
-            <TouchableOpacity
-              style={styles.backBtn}
-              onPress={() => router.push('/')}
-            >
-              <Ionicons name="arrow-back" size={18} color="#64748B" />
-            </TouchableOpacity>
-            <View>
-              <Text style={styles.headerTitle}>AI Event Extractor</Text>
-              <Text style={styles.headerSubtitle}>
-                Powered by Groq LPUs (~200ms real-time chat parsing)
-              </Text>
-            </View>
-          </View>
-
-          {/* Preset Sample Selector Pills */}
-          <View style={styles.sampleSection}>
-            <Text style={styles.sampleHeading}>TRY A REAL SAMPLE MESSAGE:</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.sampleRow}
-            >
-              {SAMPLE_WHATSAPP_MESSAGES.map((sample, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={styles.sampleChip}
-                  onPress={() => handleSelectSample(sample.text)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name="document-text-outline"
-                    size={14}
-                    color="#3B82F6"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={styles.sampleChipText}>{sample.title}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Text Input Card */}
-          <View style={styles.inputCard}>
-            <View style={styles.inputHeader}>
-              <View style={styles.inputLabelGroup}>
-                <Ionicons name="chatbubbles-outline" size={15} color="#3B82F6" />
-                <Text style={styles.inputLabel}>WHATSAPP MESSAGE TEXT</Text>
-              </View>
-              {rawText.length > 0 && (
-                <TouchableOpacity onPress={handleClear}>
-                  <Text style={styles.clearText}>Clear text</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <TextInput
-              style={styles.textArea}
-              value={rawText}
-              onChangeText={(t) => {
-                setRawText(t);
-                if (errorMsg) setErrorMsg(null);
-              }}
-              placeholder="Paste WhatsApp message here (with emojis, relative dates, links, multiple events)..."
-              placeholderTextColor="#94A3B8"
-              multiline
-              numberOfLines={10}
-              textAlignVertical="top"
-            />
-
-            <View style={styles.inputFooter}>
-              <Text style={styles.charCount}>{rawText.length} characters</Text>
-              <View style={styles.aiEngineTag}>
-                <Ionicons name="flash" size={12} color="#16A34A" />
-                <Text style={styles.aiEngineText}>Groq LPU (GPT-OSS 120B)</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Error Alert */}
-          {errorMsg && (
-            <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={18} color="#EF4444" />
-              <Text style={styles.errorText}>{errorMsg}</Text>
-            </View>
+      <KeyboardAvoidingView
+        style={styles.flexOne}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+      >
+        <View style={styles.screenLayout}>
+          {isTablet && (
+            <SidebarRail onExtractPress={() => {}} />
           )}
 
-          {/* Primary Action Button */}
-          <TouchableOpacity
-            style={[styles.extractButton, isExtracting && styles.btnDisabled]}
-            activeOpacity={0.85}
-            onPress={handleExtract}
-            disabled={isExtracting || rawText.trim().length === 0}
+          <ScrollView
+            style={styles.mainScroll}
+            contentContainerStyle={styles.contentContainer}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            {isExtracting ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color="#FFFFFF" size="small" />
-                <Text style={styles.extractButtonText}>
-                  Extracting with Groq LPU...
+            {/* Header Card */}
+            <GlassCard contentStyle={styles.headerCard}>
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => router.push('/')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
+              </TouchableOpacity>
+              <View style={styles.headerTextWrap}>
+                <View style={styles.topBadgeRow}>
+                  <View style={styles.badgeIndicator}>
+                    <Ionicons name="sparkles-outline" size={12} color={colors.textPrimary} />
+                    <Text style={styles.badgeIndicatorText} numberOfLines={1}>Smart Extraction</Text>
+                  </View>
+
+                  {/* Daily Quota Pill */}
+                  {isAdmin ? (
+                    <View style={styles.adminPill}>
+                      <Ionicons name="shield-checkmark" size={11} color="#FFFFFF" />
+                      <Text style={styles.adminPillText}>UNLIMITED</Text>
+                    </View>
+                  ) : quotaInfo ? (
+                    <View style={[styles.quotaPill, isQuotaExhausted && styles.quotaPillEmpty]}>
+                      <Ionicons
+                        name="hourglass-outline"
+                        size={11}
+                        color={isQuotaExhausted ? colors.danger : colors.textSecondary}
+                      />
+                      <Text style={[styles.quotaPillText, isQuotaExhausted && styles.quotaPillTextEmpty]}>
+                        {quotaInfo.remaining} / {quotaInfo.daily_quota} left today
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <Text style={styles.headerTitle} numberOfLines={1}>Event Studio</Text>
+                <Text style={styles.headerSubtitle} numberOfLines={2}>
+                  Extract hackathons, deadlines, and meetups from raw text announcements
                 </Text>
               </View>
-            ) : (
-              <View style={styles.loadingRow}>
-                <Ionicons
-                  name="sparkles"
-                  size={18}
-                  color="#FFFFFF"
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={styles.extractButtonText}>
-                  Extract Event Objects
+            </GlassCard>
+
+            {/* Quota Exhausted Banner */}
+            {isQuotaExhausted && (
+              <View style={styles.quotaBanner}>
+                <Ionicons name="information-circle-outline" size={18} color={colors.textPrimary} />
+                <Text style={styles.quotaBannerText}>
+                  You've used today's 3 extractions. New ones unlock tomorrow.
                 </Text>
               </View>
             )}
-          </TouchableOpacity>
 
-          {/* Security Note */}
-          <View style={styles.noteBox}>
-            <Ionicons name="shield-checkmark-outline" size={14} color="#64748B" />
-            <Text style={styles.noteText}>
-              Never auto-saves silently. You review & edit every field on the next screen before saving.
-            </Text>
-          </View>
-        </ScrollView>
-      </View>
+            {/* Sample Selector Pills */}
+            <View style={styles.sampleSection}>
+              <Text style={styles.sampleHeading}>TRY A SAMPLE ANNOUNCEMENT:</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.sampleRow}
+              >
+                {SAMPLE_WHATSAPP_MESSAGES.map((sample, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.sampleChip}
+                    onPress={() => handleSelectSample(sample.text)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name="document-text-outline"
+                      size={13}
+                      color={colors.textSecondary}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text style={styles.sampleChipText} numberOfLines={1}>{sample.title}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Text Input Card */}
+            <GlassCard contentStyle={styles.inputCard}>
+              <View style={styles.inputHeader}>
+                <View style={styles.inputLabelGroup}>
+                  <Ionicons name="chatbubbles-outline" size={14} color={colors.textSecondary} />
+                  <Text style={styles.inputLabel}>MESSAGE TEXT</Text>
+                </View>
+                {rawText.length > 0 && (
+                  <TouchableOpacity onPress={handleClear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Text style={styles.clearText}>Clear</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <TextInput
+                style={styles.textArea}
+                value={rawText}
+                onChangeText={(t) => {
+                  setRawText(t);
+                  if (errorMsg) setErrorMsg(null);
+                }}
+                placeholder="Paste message here with event dates, deadlines, or registration links..."
+                placeholderTextColor={colors.textTertiary}
+                multiline
+                numberOfLines={8}
+                maxLength={25000}
+                textAlignVertical="top"
+                editable={!isQuotaExhausted}
+              />
+
+              <View style={styles.inputFooter}>
+                <Text style={styles.charCount}>{rawText.length} / 25,000</Text>
+                <View style={styles.aiEngineTag}>
+                  <Ionicons name="sparkles-outline" size={12} color={colors.textTertiary} />
+                  <Text style={styles.aiEngineText}>Smart Schedule Parser</Text>
+                </View>
+              </View>
+            </GlassCard>
+
+            {/* Error Alert Banner */}
+            {errorMsg && (
+              <View style={styles.errorBanner}>
+                <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
+                <Text style={styles.errorText} numberOfLines={3}>{errorMsg}</Text>
+              </View>
+            )}
+
+            {/* Primary Action Button */}
+            <GlassButton
+              title={isQuotaExhausted ? 'Daily Limit Reached' : 'Extract Schedule'}
+              variant="primary"
+              onPress={handleExtract}
+              loading={isExtracting}
+              disabled={rawText.trim().length === 0 || isQuotaExhausted}
+              icon={<Ionicons name="sparkles-outline" size={16} color="#FFFFFF" />}
+              style={styles.extractButton}
+            />
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -247,12 +345,14 @@ export default function ExtractScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#EEF2F6',
+    backgroundColor: colors.canvas,
   },
-  layoutWrapper: {
+  flexOne: {
+    flex: 1,
+  },
+  screenLayout: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: '#EEF2F6',
   },
   mainScroll: {
     flex: 1,
@@ -260,53 +360,134 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 16,
     paddingBottom: 40,
-    gap: 16,
+    gap: 14,
+    maxWidth: 720,
+    alignSelf: 'center',
+    width: '100%',
   },
   headerCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 16,
     gap: 12,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
   },
   backBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    backgroundColor: colors.canvasSubtle,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.glassBorder,
+  },
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  topBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  badgeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.canvasSubtle,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  badgeIndicatorText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  adminPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+  },
+  adminPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+  },
+  quotaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.canvasSubtle,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  quotaPillEmpty: {
+    backgroundColor: colors.dangerLight,
+    borderColor: 'rgba(220, 38, 38, 0.2)',
+  },
+  quotaPillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  quotaPillTextEmpty: {
+    color: colors.danger,
+    fontWeight: '700',
+  },
+  quotaBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.canvasSubtle,
+    borderRadius: radii.control,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  quotaBannerText: {
+    fontSize: 12,
+    color: colors.textPrimary,
+    fontWeight: '500',
+    flex: 1,
+    lineHeight: 16,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#0F172A',
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
+    lineHeight: 26,
   },
   headerSubtitle: {
     fontSize: 12,
-    color: '#64748B',
+    color: colors.textSecondary,
+    lineHeight: 16,
     marginTop: 2,
   },
   sampleSection: {
-    gap: 8,
+    gap: 6,
   },
   sampleHeading: {
     fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    color: '#64748B',
-    marginLeft: 4,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sampleRow: {
     gap: 8,
@@ -316,43 +497,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: radii.control,
     borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.9)',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 1,
+    borderColor: colors.glassBorder,
+    ...shadows.subtle,
   },
   sampleChipText: {
     fontSize: 12,
-    color: '#334155',
-    fontWeight: '600',
+    fontWeight: '500',
+    color: colors.textPrimary,
   },
   inputCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-    overflow: 'hidden',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
+    padding: 16,
+    gap: 10,
   },
   inputHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#F8FAFC',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
   },
   inputLabelGroup: {
     flexDirection: 'row',
@@ -361,102 +525,62 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    color: '#475569',
+    fontWeight: '600',
+    color: colors.textSecondary,
+    letterSpacing: 0.4,
   },
   clearText: {
     fontSize: 12,
-    color: '#EF4444',
-    fontWeight: '600',
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   textArea: {
-    minHeight: 200,
-    padding: 16,
+    minHeight: 140,
     fontSize: 14,
-    color: '#0F172A',
+    color: colors.textPrimary,
     lineHeight: 22,
+    backgroundColor: colors.canvasSubtle,
+    borderRadius: radii.control,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
   },
   inputFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    backgroundColor: '#F8FAFC',
   },
   charCount: {
-    fontSize: 12,
-    color: '#94A3B8',
+    fontSize: 11,
+    color: colors.textTertiary,
   },
   aiEngineTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
   },
   aiEngineText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#15803D',
+    color: colors.textTertiary,
   },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#FEE2E2',
-    padding: 14,
-    borderRadius: 16,
+    gap: 8,
+    backgroundColor: colors.dangerLight,
     borderWidth: 1,
-    borderColor: '#FCA5A5',
+    borderColor: 'rgba(220, 38, 38, 0.15)',
+    borderRadius: radii.control,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   errorText: {
     flex: 1,
-    fontSize: 13,
-    color: '#B91C1C',
-    lineHeight: 18,
+    fontSize: 12,
+    color: colors.danger,
+    lineHeight: 16,
   },
   extractButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 16,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  btnDisabled: {
-    backgroundColor: '#94A3B8',
-    opacity: 0.7,
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  extractButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  noteBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-  },
-  noteText: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
+    minHeight: 48,
   },
 });

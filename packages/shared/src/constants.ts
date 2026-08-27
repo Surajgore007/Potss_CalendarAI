@@ -5,6 +5,61 @@ export const DEFAULT_REMINDER_OFFSETS = [4320, 1440, 0];
 
 export const CONFIDENCE_LOW_THRESHOLD = 0.70;
 
+export const THEME_DESIGN = {
+  colors: {
+    bgLight: '#F8FAFC',
+    bgDark: '#0B0F19',
+    surfaceLight: '#FFFFFF',
+    surfaceDark: '#131B2E',
+    surfaceCard: 'rgba(255, 255, 255, 0.96)',
+    surfaceFrosted: 'rgba(255, 255, 255, 0.85)',
+    borderLight: '#E2E8F0',
+    borderSubtle: 'rgba(226, 232, 240, 0.7)',
+    borderGlow: 'rgba(99, 102, 241, 0.25)',
+    primary: '#4F46E5',
+    primaryLight: '#6366F1',
+    primaryGlow: 'rgba(79, 70, 229, 0.12)',
+    accentEmerald: '#10B981',
+    accentAmber: '#F59E0B',
+    accentRose: '#F43F5E',
+    accentCyan: '#06B6D4',
+    textMain: '#0F172A',
+    textMuted: '#64748B',
+    textLight: '#94A3B8',
+  },
+  radii: {
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    xxl: 24,
+    pill: 9999,
+  },
+  shadows: {
+    card: {
+      shadowColor: '#0F172A',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.05,
+      shadowRadius: 12,
+      elevation: 2,
+    },
+    cardHover: {
+      shadowColor: '#4F46E5',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.12,
+      shadowRadius: 16,
+      elevation: 4,
+    },
+    glow: {
+      shadowColor: '#6366F1',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 14,
+      elevation: 5,
+    },
+  },
+};
+
 export const EVENT_TYPE_CONFIG: Record<
   EventType,
   {
@@ -19,25 +74,25 @@ export const EVENT_TYPE_CONFIG: Record<
 > = {
   hackathon: {
     label: 'Hackathon',
-    badgeBg: '#EDE9FE',
-    badgeText: '#7C3AED',
-    accentColor: '#8B5CF6',
-    gradient: ['#8B5CF6', '#6D28D9'],
+    badgeBg: '#EEF2FF',
+    badgeText: '#4F46E5',
+    accentColor: '#6366F1',
+    gradient: ['#6366F1', '#4F46E5'],
     icon: 'code-slash-outline',
     defaultUrgency: 'high',
   },
   ctf: {
     label: 'CTF Challenge',
-    badgeBg: '#FEE2E2',
-    badgeText: '#DC2626',
-    accentColor: '#EF4444',
-    gradient: ['#EF4444', '#B91C1C'],
+    badgeBg: '#FFF1F2',
+    badgeText: '#E11D48',
+    accentColor: '#F43F5E',
+    gradient: ['#F43F5E', '#BE123C'],
     icon: 'shield-checkmark-outline',
     defaultUrgency: 'high',
   },
   meetup: {
     label: 'Tech Meetup',
-    badgeBg: '#D1FAE5',
+    badgeBg: '#ECFDF5',
     badgeText: '#059669',
     accentColor: '#10B981',
     gradient: ['#10B981', '#047857'],
@@ -46,16 +101,16 @@ export const EVENT_TYPE_CONFIG: Record<
   },
   workshop: {
     label: 'Workshop',
-    badgeBg: '#DBEAFE',
-    badgeText: '#2563EB',
-    accentColor: '#3B82F6',
-    gradient: ['#3B82F6', '#1D4ED8'],
+    badgeBg: '#F0F9FF',
+    badgeText: '#0284C7',
+    accentColor: '#0EA5E9',
+    gradient: ['#0EA5E9', '#0369A1'],
     icon: 'school-outline',
     defaultUrgency: 'medium',
   },
   deadline: {
     label: 'Deadline',
-    badgeBg: '#FEF3C7',
+    badgeBg: '#FFFBEB',
     badgeText: '#D97706',
     accentColor: '#F59E0B',
     gradient: ['#F59E0B', '#B45309'],
@@ -64,10 +119,10 @@ export const EVENT_TYPE_CONFIG: Record<
   },
   other: {
     label: 'Tech Event',
-    badgeBg: '#F3F4F6',
-    badgeText: '#4B5563',
-    accentColor: '#6B7280',
-    gradient: ['#6B7280', '#374151'],
+    badgeBg: '#F8FAFC',
+    badgeText: '#475569',
+    accentColor: '#64748B',
+    gradient: ['#64748B', '#334155'],
     icon: 'calendar-outline',
     defaultUrgency: 'normal',
   },
@@ -84,21 +139,21 @@ export const EVENT_MODE_CONFIG: Record<
 > = {
   online: {
     label: 'Online',
-    badgeBg: '#E0F2FE',
+    badgeBg: '#F0F9FF',
     badgeText: '#0284C7',
     icon: 'globe-outline',
   },
   offline: {
     label: 'In-Person',
-    badgeBg: '#DCFCE7',
-    badgeText: '#16A34A',
+    badgeBg: '#ECFDF5',
+    badgeText: '#059669',
     icon: 'location-outline',
   },
   hybrid: {
     label: 'Hybrid',
-    badgeBg: '#F3E8FF',
+    badgeBg: '#FAF5FF',
     badgeText: '#9333EA',
-    icon: 'git-network-outline',
+    icon: 'shuffle-outline',
   },
 };
 
@@ -107,28 +162,28 @@ export const EVENT_STATUS_CONFIG: Record<
   {
     label: string;
     color: string;
-    bg: string;
+    icon: string;
   }
 > = {
   upcoming: {
     label: 'Upcoming',
-    color: '#0284C7',
-    bg: '#E0F2FE',
+    color: '#4F46E5',
+    icon: 'time-outline',
   },
   registered: {
     label: 'Registered',
-    color: '#059669',
-    bg: '#D1FAE5',
+    color: '#10B981',
+    icon: 'checkmark-circle-outline',
   },
   skipped: {
     label: 'Skipped',
-    color: '#6B7280',
-    bg: '#F3F4F6',
+    color: '#94A3B8',
+    icon: 'close-circle-outline',
   },
   past: {
     label: 'Past',
-    color: '#9CA3AF',
-    bg: '#F3F4F6',
+    color: '#64748B',
+    icon: 'archive-outline',
   },
 };
 
@@ -140,92 +195,46 @@ export const GEMINI_RESPONSE_SCHEMA = {
       items: {
         type: 'OBJECT',
         properties: {
-          title: { type: 'STRING', description: 'Clear title of the event or hackathon' },
+          title: { type: 'STRING' },
           type: {
             type: 'STRING',
             enum: ['hackathon', 'ctf', 'meetup', 'workshop', 'deadline', 'other'],
-            description: 'Classification of the event type'
           },
-          event_start_date: {
-            type: 'STRING',
-            description: 'ISO 8601 YYYY-MM-DD date when the event starts. null if unknown or not specified in text.'
-          },
-          event_end_date: {
-            type: 'STRING',
-            description: 'ISO 8601 YYYY-MM-DD date when the event ends. null if single day or unknown.'
-          },
-          registration_deadline: {
-            type: 'STRING',
-            description: 'ISO 8601 YYYY-MM-DD date of the registration deadline. Separate from event_start_date! null if not mentioned.'
-          },
-          time: {
-            type: 'STRING',
-            description: 'Time string in 24h format HH:MM if available. null if not specified.'
-          },
+          event_start_date: { type: 'STRING' },
+          event_end_date: { type: 'STRING' },
+          registration_deadline: { type: 'STRING' },
+          time: { type: 'STRING' },
           mode: {
             type: 'STRING',
             enum: ['online', 'offline', 'hybrid'],
-            description: 'Delivery mode of the event'
           },
-          location: {
-            type: 'STRING',
-            description: 'Physical venue, city, or platform URL/server. null if not mentioned.'
+          location: { type: 'STRING' },
+          registration_link: { type: 'STRING' },
+          source_group: { type: 'STRING' },
+          confidence_score: { type: 'NUMBER' },
+          tags: {
+            type: 'ARRAY',
+            items: { type: 'STRING' },
           },
-          registration_link: {
-            type: 'STRING',
-            description: 'Valid web URL link for registration or info. null if none found.'
-          },
-          source_group: {
-            type: 'STRING',
-            description: 'WhatsApp group name, channel, or community if mentioned. null if not found.'
-          },
-          confidence_score: {
-            type: 'NUMBER',
-            description: 'Confidence level between 0.0 and 1.0 regarding extraction accuracy and completeness.'
-          }
         },
-        required: ['title', 'type', 'mode', 'confidence_score']
-      }
-    }
+        required: ['title', 'type', 'mode', 'confidence_score'],
+      },
+    },
   },
-  required: ['events']
+  required: ['events'],
 };
 
 export const SAMPLE_WHATSAPP_MESSAGES = [
   {
-    title: 'Hackathon with Registration Deadline',
-    text: `🚀 *AI INNOVATION HACKATHON 2026* 🚀
-Organized by DevCommunity Bangalore!
-📍 Mode: Hybrid (Bengaluru / Online)
-🗓 Event Dates: August 28 - August 30, 2026
-⏰ Starts 10:00 AM IST
-⚠️ *REGISTRATION DEADLINE: August 25, 2026 11:59 PM*
-Prize Pool: ₹5,00,000 + Internship opportunities!
-Form teams of 2-4.
-Register now: https://ai-innovation-2026.dev/register
-Forwarded from *Bangalore Tech Geeks WhatsApp Group*`,
+    title: 'Hackathon & Registration',
+    text: `🚀 *HackNITR 6.0 is LIVE!* 🚀\n\nJoin India's biggest student-run hackathon!\n\n📅 *Event Dates:* Oct 18 - Oct 20, 2026\n⏰ *Time:* 10:00 AM IST\n📍 *Mode:* Hybrid (NIT Rourkela + Discord)\n🏆 *Prizes:* ₹5,00,000+ in cash & swags!\n\n⚠️ *Registration Deadline:* Oct 10, 2026 at 11:59 PM IST\n\n👉 Register now: https://hacknitr.devfolio.co\nDon't miss out! Teams of 2-4 allowed.`,
   },
   {
-    title: 'Weekend CTF & Meetup Digest',
-    text: `🔥 *Weekend Tech Lineup!* 🔥
-
-1️⃣ *Null Bangalore CTF Challenge*
-Sharpen your reverse engineering and web exploitation skills.
-📅 Date: This Saturday, August 23, 2026
-⏰ 2:00 PM - 8:00 PM
-Mode: 100% Online
-Link: https://ctf.null.community/2026/round1
-
-2️⃣ *Rust & WebAssembly Meetup #14*
-Topic: Zero-cost abstractions in production.
-📅 Date: Sunday, August 24, 2026
-⏰ 11:00 AM
-📍 Location: Microsoft Reactor, Lavelle Road, Bangalore
-RSVP: https://meetup.com/rust-bangalore/events/3012948
-Limited to first 60 seats!`,
+    title: 'CTF Challenge',
+    text: `🚩 *nullcon HackIM CTF 2026 Announced!* 🚩\n\nGet ready for 48 hours of intense jeopardy-style CTF.\n\n🗓️ *Date:* Nov 5, 2026\n⏰ *Starts:* 18:00 UTC\n🌐 *Platform:* Online\n🎯 *Categories:* Web, Pwn, Reverse, Crypto, Forensics\n\n📌 *Register before:* Nov 1, 2026\n🔗 Link: https://ctf.nullcon.net\nOrganized by @nullcommunity`,
   },
   {
-    title: 'Community Workshop Announcement',
-    text: `Hey folks, Google Cloud community is doing a hands-on Kubernetes workshop sometime next week on Zoom. Registration link is somewhere on https://gdg.community.dev. Check it out!`,
-  }
+    title: 'Hands-on AI Workshop',
+    text: `🤖 *Free Workshop: Building Full-Stack LLM Apps with LangChain & Next.js*\n\nHey everyone! GDG Pune is hosting a free hands-on workshop.\n\n📅 *Date:* Sep 28, 2026\n🕒 *Time:* 2:00 PM - 5:00 PM IST\n📍 *Venue:* Cummins College of Engineering, Pune (Offline)\n\n⚡ *Seats limited to 80 people!*\n⏳ *Registration Closes:* Sep 25, 2026\n🎟️ RSVP here: https://gdg.community.dev/events/pune-ai-workshop\nBring your laptops!`,
+  },
 ];

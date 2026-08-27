@@ -1,14 +1,17 @@
 {
   "expo": {
-    "name": "EventPulse",
+    "name": "Vanko",
     "slug": "eventpulse",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "icon": "./assets/icon/vanko-icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
     "scheme": "eventpulse",
     "splash": {
-      "backgroundColor": "#0F172A"
+      "image": "./assets/icon/vanko-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAFAFA"
     },
     "ios": {
       "supportsTablet": true,
@@ -17,7 +20,8 @@
     "android": {
       "package": "com.suraj.eventpulse",
       "adaptiveIcon": {
-        "backgroundColor": "#0F172A"
+        "foregroundImage": "./assets/icon/vanko-adaptive-foreground.png",
+        "backgroundColor": "#FAFAFA"
       },
       "permissions": [
         "android.permission.SCHEDULE_EXACT_ALARM",
@@ -28,13 +32,114 @@
       ],
       "intentFilters": [
         {
+          "action": "VIEW",
+          "autoVerify": true,
+          "category": [
+            "DEFAULT",
+            "BROWSABLE"
+          ],
+          "data": [
+            {
+              "scheme": "com.suraj.eventpulse"
+            },
+            {
+              "scheme": "com.googleusercontent.apps.922680174583-j1a2rpqst7da4g5t4lp9su29q4ukn2p2"
+            },
+            {
+              "scheme": "com.googleusercontent.apps.922680174583-jekkdgpb3re8frhfqd8tkhp5nin2e3ja"
+            },
+            {
+              "scheme": "com.googleusercontent.apps.922680174583-moi8a65hp2ji4345pco5fvt7tum49f7r"
+            }
+          ]
+        },
+        {
           "action": "SEND",
           "category": [
             "DEFAULT"
           ],
-          "data": {
-            "mimeType": "text/*"
-          }
+          "data": [
+            {
+              "mimeType": "text/plain"
+            }
+          ]
+        },
+        {
+          "action": "SEND",
+          "category": [
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "text/*"
+            }
+          ]
+        },
+        {
+          "action": "SEND",
+          "category": [
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "image/*"
+            }
+          ]
+        },
+        {
+          "action": "SEND",
+          "category": [
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "*/*"
+            }
+          ]
+        },
+        {
+          "action": "SEND_MULTIPLE",
+          "category": [
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "text/plain"
+            }
+          ]
+        },
+        {
+          "action": "SEND_MULTIPLE",
+          "category": [
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "text/*"
+            }
+          ]
+        },
+        {
+          "action": "SEND_MULTIPLE",
+          "category": [
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "image/*"
+            }
+          ]
+        },
+        {
+          "action": "PROCESS_TEXT",
+          "category": [
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "mimeType": "text/plain"
+            }
+          ]
         }
       ]
     },
@@ -43,18 +148,27 @@
       "output": "single"
     },
     "plugins": [
+      "./plugins/withShareIntent",
       "expo-router",
       [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#6366F1",
+          "color": "#3B82F6",
           "sounds": []
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "d27b40b1-ee0c-41d0-8304-03737c41cc50"
+      }
     }
   }
 }

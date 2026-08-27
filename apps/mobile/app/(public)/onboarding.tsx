@@ -5,29 +5,32 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { GlassCard } from '../../src/components/ui/GlassCard';
+import { GlassButton } from '../../src/components/ui/GlassButton';
+import { colors, radii, shadows } from '../../src/theme/tokens';
+import { requestNotificationPermissions } from '../../src/services/notificationService';
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const [selectedBrand, setSelectedBrand] = useState<'xiaomi' | 'oneplus' | 'samsung' | 'oppo' | 'pixel'>('samsung');
+  const [selectedBrand, setSelectedBrand] = useState<'samsung' | 'xiaomi' | 'oneplus' | 'oppo' | 'pixel'>('samsung');
 
   const brandGuides = {
     samsung: {
       title: 'Samsung (One UI)',
       steps: [
-        'Open Settings -> Apps -> EventPulse',
+        'Open Settings -> Apps -> Vanko',
         'Tap "Battery" -> Choose "Unrestricted"',
         'Open "Alarms & Reminders" -> Toggle "Allow setting alarms"',
       ],
     },
     xiaomi: {
-      title: 'Xiaomi / Redmi / POCO (MIUI / HyperOS)',
+      title: 'Xiaomi / Redmi / POCO (HyperOS / MIUI)',
       steps: [
-        'Settings -> Apps -> Manage Apps -> EventPulse',
+        'Settings -> Apps -> Manage Apps -> Vanko',
         'Enable "Autostart" toggle',
         'Battery saver -> Choose "No restrictions"',
         'Permissions -> Enable "Alarms & Reminders"',
@@ -36,7 +39,7 @@ export default function OnboardingScreen() {
     oneplus: {
       title: 'OnePlus / Realme (OxygenOS / ColorOS)',
       steps: [
-        'Settings -> Apps -> App Management -> EventPulse',
+        'Settings -> Apps -> App Management -> Vanko',
         'Battery usage -> Allow background activity & Auto-launch',
         'Special app access -> Alarms & Reminders -> Allow',
       ],
@@ -51,74 +54,87 @@ export default function OnboardingScreen() {
     pixel: {
       title: 'Google Pixel / Stock Android',
       steps: [
-        'Settings -> Apps -> EventPulse -> App battery usage -> Unrestricted',
+        'Settings -> Apps -> Vanko -> App battery usage -> Unrestricted',
         'Alarms & Reminders -> Allowed',
       ],
     },
   };
 
+  const handleGrantPermissions = async () => {
+    try {
+      await requestNotificationPermissions();
+    } catch (e) {
+      console.error('Permission request error:', e);
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.iconCircle}>
-            <Ionicons name="shield-checkmark" size={32} color="#818CF8" />
+            <Ionicons name="notifications-outline" size={26} color={colors.textPrimary} />
           </View>
-          <Text style={styles.title}>100% Reliable Reminders</Text>
-          <Text style={styles.subtitle}>
-            To ensure you never miss a registration deadline even when EventPulse is fully closed,
-            Android requires two quick permissions:
+          <Text style={styles.title} numberOfLines={1}>Reliable Reminders</Text>
+          <Text style={styles.subtitle} numberOfLines={3}>
+            To ensure you receive event and deadline reminders even when Vanko is closed, please enable standard Android notifications:
           </Text>
         </View>
 
-        {/* Step 1: Exact Alarms */}
-        <View style={styles.card}>
+        {/* Step 1: Notifications & Exact Alarms */}
+        <GlassCard contentStyle={styles.cardContent}>
           <View style={styles.cardHeader}>
-            <View style={[styles.stepNumber, { backgroundColor: '#4F46E5' }]}>
+            <View style={styles.stepNumber}>
               <Text style={styles.stepNumberText}>1</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Exact Alarms Permission</Text>
-              <Text style={styles.cardSubtitle}>
-                Allows the OS to fire notifications at the exact minute without delay.
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.cardTitle} numberOfLines={1}>Notification Permissions</Text>
+              <Text style={styles.cardSubtitle} numberOfLines={2}>
+                Allows reminders to arrive ahead of registration deadlines and event dates.
               </Text>
             </View>
           </View>
-          <TouchableOpacity
+          <GlassButton
+            title="Enable Notifications"
+            variant="primary"
+            onPress={handleGrantPermissions}
+            icon={<Ionicons name="notifications-outline" size={16} color="#FFFFFF" />}
             style={styles.actionBtn}
-            onPress={() => {
-              // Trigger permission flow in Phase 3
-            }}
-          >
-            <Ionicons name="alarm-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.actionBtnText}>Grant Exact Alarm Permission</Text>
-          </TouchableOpacity>
-        </View>
+          />
+        </GlassCard>
 
         {/* Step 2: Battery Optimization Guide */}
-        <View style={styles.card}>
+        <GlassCard contentStyle={styles.cardContent}>
           <View style={styles.cardHeader}>
-            <View style={[styles.stepNumber, { backgroundColor: '#059669' }]}>
+            <View style={styles.stepNumber}>
               <Text style={styles.stepNumberText}>2</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Battery Optimization Exemption</Text>
-              <Text style={styles.cardSubtitle}>
-                Prevents aggressive phone cleaners from killing scheduled reminders.
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.cardTitle} numberOfLines={1}>Battery Optimization Exemption</Text>
+              <Text style={styles.cardSubtitle} numberOfLines={2}>
+                Prevents phone battery savers from silencing upcoming notifications.
               </Text>
             </View>
           </View>
 
-          <Text style={styles.selectBrandLabel}>Select your phone manufacturer:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.brandTabs}>
+          <Text style={styles.selectBrandLabel}>Select your device manufacturer:</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.brandTabs}
+          >
             {(['samsung', 'xiaomi', 'oneplus', 'oppo', 'pixel'] as const).map((b) => (
               <TouchableOpacity
                 key={b}
                 style={[styles.brandTab, selectedBrand === b && styles.brandTabSelected]}
                 onPress={() => setSelectedBrand(b)}
+                activeOpacity={0.7}
               >
-                <Text style={[styles.brandTabText, selectedBrand === b && styles.brandTabTextSelected]}>
+                <Text
+                  style={[styles.brandTabText, selectedBrand === b && styles.brandTabTextSelected]}
+                  numberOfLines={1}
+                >
                   {b.toUpperCase()}
                 </Text>
               </TouchableOpacity>
@@ -126,7 +142,9 @@ export default function OnboardingScreen() {
           </ScrollView>
 
           <View style={styles.instructionsBox}>
-            <Text style={styles.instructionTitle}>{brandGuides[selectedBrand].title}</Text>
+            <Text style={styles.instructionTitle} numberOfLines={1}>
+              {brandGuides[selectedBrand].title}
+            </Text>
             {brandGuides[selectedBrand].steps.map((step, idx) => (
               <View key={idx} style={styles.instructionStep}>
                 <Text style={styles.bullet}>•</Text>
@@ -134,17 +152,15 @@ export default function OnboardingScreen() {
               </View>
             ))}
           </View>
-        </View>
+        </GlassCard>
 
         {/* Done Button */}
-        <TouchableOpacity
-          style={styles.doneBtn}
-          activeOpacity={0.85}
+        <GlassButton
+          title="Continue to Calendar"
+          variant="primary"
           onPress={() => router.replace('/(auth)')}
-        >
-          <Text style={styles.doneBtnText}>I'm All Set, Open Calendar</Text>
-          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
-        </TouchableOpacity>
+          style={styles.doneBtn}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -153,166 +169,153 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#090D16',
+    backgroundColor: colors.canvas,
   },
   container: {
-    padding: 20,
-    gap: 16,
+    padding: 16,
+    paddingBottom: 36,
+    gap: 14,
+    maxWidth: 440,
+    alignSelf: 'center',
+    width: '100%',
   },
   header: {
     alignItems: 'center',
-    marginBottom: 8,
+    gap: 8,
+    paddingVertical: 12,
   },
   iconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#1E1B4B',
-    borderWidth: 1.5,
-    borderColor: '#6366F1',
-    justifyContent: 'center',
+    width: 52,
+    height: 52,
+    borderRadius: radii.card,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    ...shadows.subtle,
   },
   title: {
     fontSize: 22,
-    fontWeight: '800',
-    color: '#F8FAFC',
-    marginBottom: 6,
-    textAlign: 'center',
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
+    lineHeight: 28,
   },
   subtitle: {
     fontSize: 13,
-    color: '#94A3B8',
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
+    paddingHorizontal: 8,
   },
-  card: {
-    backgroundColor: '#111827',
-    borderRadius: 14,
+  cardContent: {
     padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
     gap: 12,
   },
   cardHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   stepNumber: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   stepNumberText: {
-    fontSize: 12,
-    fontWeight: '800',
     color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#F1F5F9',
-    marginBottom: 2,
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    lineHeight: 18,
   },
   cardSubtitle: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: colors.textSecondary,
     lineHeight: 16,
+    marginTop: 2,
   },
   actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4F46E5',
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  actionBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    minHeight: 44,
+    marginTop: 4,
   },
   selectBrandLabel: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#94A3B8',
+    fontWeight: '600',
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginTop: 4,
   },
   brandTabs: {
-    flexDirection: 'row',
     gap: 8,
+    paddingVertical: 2,
   },
   brandTab: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#1E293B',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: radii.pill,
+    backgroundColor: colors.canvasSubtle,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.glassBorder,
   },
   brandTabSelected: {
-    backgroundColor: '#059669',
-    borderColor: '#10B981',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   brandTabText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#94A3B8',
+    fontWeight: '600',
+    color: colors.textSecondary,
+    letterSpacing: 0.5,
   },
   brandTabTextSelected: {
     color: '#FFFFFF',
   },
   instructionsBox: {
-    backgroundColor: '#0F172A',
-    borderRadius: 8,
+    backgroundColor: colors.canvasSubtle,
+    borderRadius: radii.control,
     padding: 12,
-    gap: 6,
+    gap: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: colors.glassBorder,
   },
   instructionTitle: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#34D399',
-    marginBottom: 4,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    lineHeight: 18,
   },
   instructionStep: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     gap: 6,
+    alignItems: 'flex-start',
   },
   bullet: {
-    fontSize: 14,
-    color: '#94A3B8',
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
   },
   stepText: {
     flex: 1,
     fontSize: 12,
-    color: '#CBD5E1',
-    lineHeight: 17,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   doneBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10B981',
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginTop: 8,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  doneBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    minHeight: 48,
+    marginTop: 6,
   },
 });

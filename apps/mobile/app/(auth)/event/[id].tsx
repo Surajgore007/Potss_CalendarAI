@@ -9,7 +9,6 @@ import {
   Linking,
   Alert,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -18,6 +17,7 @@ import { Header } from '../../../src/components/Header';
 import { TypeBadge } from '../../../src/components/TypeBadge';
 import { ConfidenceBadge } from '../../../src/components/ConfidenceBadge';
 import { useEvents } from '../../../src/context/EventsContext';
+import { colors, radii, shadows } from '../../../src/theme/tokens';
 import {
   CalendarEvent,
   EventType,
@@ -28,6 +28,10 @@ import {
   EVENT_STATUS_CONFIG,
   formatFriendlyDate,
   getUrgencyInfo,
+  THEME_DESIGN,
+  validateEventForSave,
+  isValidTimeFormat,
+  sanitizeUrl,
 } from '@eventpulse/shared';
 
 const EVENT_TYPES: EventType[] = ['hackathon', 'ctf', 'meetup', 'workshop', 'deadline', 'other'];
@@ -57,7 +61,7 @@ export default function EventDetailScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <Header title="Event Details" showBack />
         <View style={styles.emptyContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color="#64748B" />
+          <Ionicons name="alert-circle-outline" size={48} color="#94A3B8" />
           <Text style={styles.emptyTitle}>Event not found</Text>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
             <Text style={styles.backBtnText}>Go Back</Text>
@@ -76,9 +80,34 @@ export default function EventDetailScreen() {
 
   const handleSave = async () => {
     if (!formData) return;
+    const issues = validateEventForSave(formData);
+    const errors = issues.filter((issue) => issue.severity === 'error');
+    if (errors.length > 0) {
+      Alert.alert('Check event details', errors.map((issue) => issue.message).join('\n'));
+      return;
+    }
+    if (formData.time && !isValidTimeFormat(formData.time)) {
+      Alert.alert('Check event details', 'Time must use 24-hour HH:MM format.');
+      return;
+    }
+    if (formData.event_end_date && formData.event_start_date && formData.event_end_date < formData.event_start_date) {
+      Alert.alert('Check event details', 'End date cannot be before the start date.');
+      return;
+    }
     setIsSaving(true);
     try {
-      await editEvent(formData.id, formData);
+      await editEvent(formData.id, {
+        title: formData.title.trim(),
+        type: formData.type,
+        event_start_date: formData.event_start_date,
+        event_end_date: formData.event_end_date,
+        registration_deadline: formData.registration_deadline,
+        time: formData.time,
+        mode: formData.mode,
+        location: formData.location?.trim() || null,
+        registration_link: sanitizeUrl(formData.registration_link),
+        source_group: formData.source_group?.trim() || null,
+      });
       setIsEditing(false);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to update event.');
@@ -124,10 +153,10 @@ export default function EventDetailScreen() {
             ) : (
               <>
                 <TouchableOpacity style={styles.headerIconBtn} onPress={() => setIsEditing(true)}>
-                  <Ionicons name="pencil" size={16} color="#A78BFA" />
+                  <Ionicons name="pencil" size={15} color="#4F46E5" />
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.headerIconBtn, styles.deleteHeaderBtn]} onPress={handleDelete}>
-                  <Ionicons name="trash-outline" size={16} color="#F87171" />
+                  <Ionicons name="trash-outline" size={15} color="#E11D48" />
                 </TouchableOpacity>
               </>
             )}
@@ -136,20 +165,35 @@ export default function EventDetailScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        {/* Status Switcher Row */}
+        {/* Status Selector Switcher */}
         <View style={styles.statusSection}>
-          <Text style={styles.sectionLabel}>MY STATUS:</Text>
-          <View style={styles.statusButtonsRow}>
+          <Text style={styles.sectionLabel}>CALENDAR STATUS</Text>
+          <View style={styles.segmentedContainer}>
             {STATUSES.map((st) => {
               const selected = formData.status === st;
               const config = EVENT_STATUS_CONFIG[st];
               return (
                 <TouchableOpacity
                   key={st}
-                  style={[styles.statusBtn, selected && { backgroundColor: `${config.color}25`, borderColor: config.color }]}
+                  style={[
+                    styles.segmentTab,
+                    selected && styles.segmentTabActive,
+                  ]}
                   onPress={() => handleStatusChange(st)}
+                  activeOpacity={0.75}
                 >
-                  <Text style={[styles.statusBtnText, selected && { color: config.color, fontWeight: '700' }]}>
+                  <Ionicons
+                    name={config.icon as any}
+                    size={13}
+                    color={selected ? config.color : colors.textTertiary}
+                  />
+                  <Text
+                    style={[
+                      styles.segmentTabText,
+                      selected && { color: config.color, fontWeight: '700' },
+                    ]}
+                    numberOfLines={1}
+                  >
                     {config.label}
                   </Text>
                 </TouchableOpacity>
@@ -167,11 +211,12 @@ export default function EventDetailScreen() {
                 style={styles.textInput}
                 value={formData.title}
                 onChangeText={(t) => handleFieldChange('title', t)}
+                maxLength={200}
               />
             </View>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>TYPE</Text>
+              <Text style={styles.fieldLabel}>CATEGORY</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
                 {EVENT_TYPES.map((t) => (
                   <TouchableOpacity
@@ -189,24 +234,26 @@ export default function EventDetailScreen() {
 
             <View style={styles.rowTwoCols}>
               <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text style={[styles.fieldLabel, { color: '#FCD34D' }]}>REG. DEADLINE (YYYY-MM-DD)</Text>
+                <Text style={styles.fieldLabel}>REG. DEADLINE (YYYY-MM-DD)</Text>
                 <TextInput
                   style={styles.textInput}
                   value={formData.registration_deadline || ''}
                   onChangeText={(t) => handleFieldChange('registration_deadline', t || null)}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#475569"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={10}
                 />
               </View>
 
               <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text style={[styles.fieldLabel, { color: '#7DD3FC' }]}>EVENT START (YYYY-MM-DD)</Text>
+                <Text style={styles.fieldLabel}>EVENT START (YYYY-MM-DD)</Text>
                 <TextInput
                   style={styles.textInput}
                   value={formData.event_start_date || ''}
                   onChangeText={(t) => handleFieldChange('event_start_date', t || null)}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#475569"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={10}
                 />
               </View>
             </View>
@@ -219,7 +266,8 @@ export default function EventDetailScreen() {
                   value={formData.event_end_date || ''}
                   onChangeText={(t) => handleFieldChange('event_end_date', t || null)}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#475569"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={10}
                 />
               </View>
               <View style={[styles.fieldGroup, { flex: 1 }]}>
@@ -229,7 +277,8 @@ export default function EventDetailScreen() {
                   value={formData.time || ''}
                   onChangeText={(t) => handleFieldChange('time', t || null)}
                   placeholder="10:00"
-                  placeholderTextColor="#475569"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={5}
                 />
               </View>
             </View>
@@ -240,6 +289,7 @@ export default function EventDetailScreen() {
                 style={styles.textInput}
                 value={formData.location || ''}
                 onChangeText={(t) => handleFieldChange('location', t || null)}
+                maxLength={300}
               />
             </View>
 
@@ -250,15 +300,17 @@ export default function EventDetailScreen() {
                 value={formData.registration_link || ''}
                 onChangeText={(t) => handleFieldChange('registration_link', t || null)}
                 autoCapitalize="none"
+                maxLength={1000}
               />
             </View>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>WHATSAPP GROUP / SOURCE</Text>
+              <Text style={styles.fieldLabel}>SOURCE / GROUP</Text>
               <TextInput
                 style={styles.textInput}
                 value={formData.source_group || ''}
                 onChangeText={(t) => handleFieldChange('source_group', t || null)}
+                maxLength={200}
               />
             </View>
           </View>
@@ -269,7 +321,7 @@ export default function EventDetailScreen() {
             <View style={styles.badgeRow}>
               <TypeBadge type={formData.type} />
               <View style={[styles.modePill, { backgroundColor: modeConfig.badgeBg }]}>
-                <Ionicons name={modeConfig.icon as any} size={12} color={modeConfig.badgeText} style={{ marginRight: 4 }} />
+                <Ionicons name={modeConfig.icon as any} size={11} color={modeConfig.badgeText} style={{ marginRight: 4 }} />
                 <Text style={[styles.modePillText, { color: modeConfig.badgeText }]}>{modeConfig.label}</Text>
               </View>
               <ConfidenceBadge score={formData.confidence_score} />
@@ -280,7 +332,7 @@ export default function EventDetailScreen() {
 
             {/* Urgency Highlight Banner */}
             <View style={styles.urgencyBanner}>
-              <Ionicons name="time" size={16} color="#818CF8" />
+              <Ionicons name="time" size={15} color="#4F46E5" />
               <Text style={styles.urgencyBannerText}>{urgency.label}</Text>
             </View>
 
@@ -289,9 +341,9 @@ export default function EventDetailScreen() {
               {formData.registration_deadline && (
                 <View style={styles.dateBlockHighlight}>
                   <View style={styles.dateIconWrap}>
-                    <Ionicons name="alarm" size={16} color="#F59E0B" />
+                    <Ionicons name="alarm" size={16} color="#D97706" />
                   </View>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.dateSub}>REGISTRATION DEADLINE</Text>
                     <Text style={styles.deadlineVal}>{formatFriendlyDate(formData.registration_deadline)}</Text>
                     {formData.time && <Text style={styles.timeVal}>Time: {formData.time}</Text>}
@@ -302,90 +354,64 @@ export default function EventDetailScreen() {
               {formData.event_start_date && (
                 <View style={styles.dateBlock}>
                   <View style={styles.dateIconWrapBlue}>
-                    <Ionicons name="calendar" size={16} color="#38BDF8" />
+                    <Ionicons name="calendar" size={16} color="#4F46E5" />
                   </View>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.dateSub}>EVENT DATE</Text>
-                    <Text style={styles.eventVal}>
+                    <Text style={styles.dateVal}>
                       {formatFriendlyDate(formData.event_start_date)}
-                      {formData.event_end_date ? ` - ${formatFriendlyDate(formData.event_end_date, false)}` : ''}
+                      {formData.event_end_date ? ` - ${formatFriendlyDate(formData.event_end_date)}` : ''}
                     </Text>
                   </View>
                 </View>
               )}
             </View>
 
-            {/* Location & Source info */}
-            <View style={styles.infoSection}>
-              {formData.location && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="location-outline" size={16} color="#94A3B8" />
-                  <Text style={styles.infoText}>{formData.location}</Text>
-                </View>
-              )}
-
-              {formData.source_group && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="chatbubbles-outline" size={16} color="#94A3B8" />
-                  <Text style={styles.infoText}>Source: {formData.source_group}</Text>
-                </View>
-              )}
-            </View>
+            {/* Location */}
+            {formData.location && (
+              <View style={styles.detailRow}>
+                <Ionicons name="location-outline" size={16} color="#4F46E5" />
+                <Text style={styles.detailText}>{formData.location}</Text>
+              </View>
+            )}
 
             {/* Registration Link Button */}
             {formData.registration_link && (
               <TouchableOpacity
-                style={styles.openLinkBtn}
+                style={styles.linkButton}
                 onPress={() => Linking.openURL(formData.registration_link!)}
+                activeOpacity={0.88}
               >
-                <Text style={styles.openLinkText}>Open Registration Page</Text>
-                <Ionicons name="open-outline" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+                <Ionicons name="open-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.linkButtonText}>Open Registration Page</Text>
               </TouchableOpacity>
             )}
 
-            {/* Reminder Offsets Preview */}
-            <View style={styles.reminderCard}>
-              <View style={styles.reminderHeader}>
-                <Ionicons name="notifications" size={16} color="#3B82F6" />
-                <Text style={styles.reminderTitle}>Scheduled Local Alerts</Text>
+            {/* Source Group */}
+            {formData.source_group && (
+              <View style={styles.detailRow}>
+                <Ionicons name="chatbubble-outline" size={14} color="#94A3B8" />
+                <Text style={styles.sourceText}>Extracted from: {formData.source_group}</Text>
               </View>
-              <Text style={styles.reminderDesc}>
-                Automated alert notifications before deadline and event day.
-              </Text>
-            </View>
+            )}
 
-            {/* Prominent Delete Event Action Button */}
-            <TouchableOpacity
-              style={styles.deleteFullBtn}
-              onPress={handleDelete}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="trash-outline" size={16} color="#DC2626" />
-              <Text style={styles.deleteFullBtnText}>Delete Event from Calendar</Text>
-            </TouchableOpacity>
+            {/* Raw Extracted Text Toggle */}
+            {formData.raw_text ? (
+              <View style={styles.rawSection}>
+                <TouchableOpacity
+                  style={styles.rawHeader}
+                  onPress={() => setShowRawText(!showRawText)}
+                >
+                  <Text style={styles.rawTitle}>Original WhatsApp Message</Text>
+                  <Ionicons name={showRawText ? 'chevron-up' : 'chevron-down'} size={14} color="#94A3B8" />
+                </TouchableOpacity>
+                {showRawText && (
+                  <Text style={styles.rawBodyText}>{formData.raw_text}</Text>
+                )}
+              </View>
+            ) : null}
           </View>
         )}
-
-        {/* Collapsible Raw WhatsApp Message */}
-        <View style={styles.rawSection}>
-          <TouchableOpacity
-            style={styles.rawHeader}
-            activeOpacity={0.8}
-            onPress={() => setShowRawText((prev) => !prev)}
-          >
-            <View style={styles.rawHeaderLeft}>
-              <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
-              <Text style={styles.rawHeaderTitle}>Original WhatsApp Message</Text>
-            </View>
-            <Ionicons name={showRawText ? 'chevron-up' : 'chevron-down'} size={18} color="#94A3B8" />
-          </TouchableOpacity>
-
-          {showRawText && (
-            <View style={styles.rawBody}>
-              <Text style={styles.rawContentText}>{formData.raw_text}</Text>
-            </View>
-          )}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -394,12 +420,12 @@ export default function EventDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#EEF2F6',
+    backgroundColor: '#F8FAFC',
   },
   container: {
     padding: 16,
-    paddingBottom: 40,
-    gap: 14,
+    paddingBottom: 48,
+    gap: 16,
   },
   headerBtns: {
     flexDirection: 'row',
@@ -409,98 +435,126 @@ const styles = StyleSheet.create({
   headerIconBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
-  editBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  editBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#3B82F6',
+  deleteHeaderBtn: {
+    backgroundColor: '#FFF1F2',
   },
   saveHeaderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#10B981',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 14,
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    ...THEME_DESIGN.shadows.glow,
   },
   saveHeaderBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  deleteHeaderBtn: {
-    padding: 8,
-    borderRadius: 14,
-    backgroundColor: '#FEE2E2',
-  },
   statusSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
-    padding: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    gap: 8,
   },
   sectionLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     color: '#64748B',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
-  statusButtonsRow: {
+  segmentedContainer: {
     flexDirection: 'row',
-    gap: 6,
-  },
-  statusBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
+    backgroundColor: colors.canvasSubtle,
+    borderRadius: radii.control,
+    padding: 3,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
+    borderColor: colors.glassBorder,
+    gap: 3,
   },
-  statusBtnText: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '600',
+  segmentTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 5,
+  },
+  segmentTabActive: {
+    backgroundColor: '#FFFFFF',
+    ...shadows.subtle,
+  },
+  segmentTabText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  editCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: radii.card,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    ...shadows.card,
+    gap: 14,
   },
   viewCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
+    borderRadius: radii.card,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
+    borderColor: colors.glassBorder,
+    ...shadows.card,
     gap: 14,
+  },
+  fieldGroup: {
+    gap: 5,
+  },
+  fieldLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    letterSpacing: 0.5,
+  },
+  textInput: {
+    backgroundColor: colors.canvasSubtle,
+    borderRadius: radii.control,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  chipRow: {
+    gap: 6,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radii.control,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  chipSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: {
+    fontSize: 11,
+    color: colors.textPrimary,
+    fontWeight: '500',
+  },
+  chipTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  rowTwoCols: {
+    flexDirection: 'row',
+    gap: 10,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -517,28 +571,27 @@ const styles = StyleSheet.create({
   },
   modePillText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   viewTitle: {
     fontSize: 20,
     fontWeight: '800',
     color: '#0F172A',
     lineHeight: 26,
+    letterSpacing: -0.4,
   },
   urgencyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderRadius: 12,
+    padding: 10,
     gap: 8,
-    backgroundColor: '#EFF6FF',
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
   },
   urgencyBannerText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#1E40AF',
+    color: '#4F46E5',
   },
   datesGrid: {
     gap: 10,
@@ -546,253 +599,130 @@ const styles = StyleSheet.create({
   dateBlockHighlight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#FEF3C7',
-    padding: 14,
-    borderRadius: 16,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: '#FEF3C7',
   },
   dateBlock: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#EFF6FF',
-    padding: 14,
-    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#E2E8F0',
   },
   dateIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FDE68A',
-    justifyContent: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FEF3C7',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   dateIconWrapBlue: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#BFDBFE',
-    justifyContent: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#EEF2FF',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   dateSub: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
     color: '#64748B',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
   deadlineVal: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#B45309',
-    marginTop: 2,
+    color: '#D97706',
+    marginTop: 1,
   },
-  eventVal: {
-    fontSize: 14,
+  dateVal: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#1E40AF',
-    marginTop: 2,
+    color: '#0F172A',
+    marginTop: 1,
   },
   timeVal: {
-    fontSize: 12,
-    color: '#B45309',
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
   },
-  infoSection: {
-    gap: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    paddingTop: 14,
-  },
-  infoRow: {
+  detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  infoText: {
+  detailText: {
     fontSize: 13,
-    color: '#475569',
-    flex: 1,
+    color: '#334155',
+    fontWeight: '500',
   },
-  openLinkBtn: {
+  linkButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#3B82F6',
-    paddingVertical: 14,
-    borderRadius: 16,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: '#4F46E5',
+    paddingVertical: 12,
+    borderRadius: 14,
+    gap: 8,
+    ...THEME_DESIGN.shadows.glow,
   },
-  openLinkText: {
-    fontSize: 14,
-    fontWeight: '700',
+  linkButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
     color: '#FFFFFF',
   },
-  reminderCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 4,
-  },
-  reminderHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  reminderTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  reminderDesc: {
+  sourceText: {
     fontSize: 11,
-    color: '#64748B',
-  },
-  deleteFullBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FEF2F2',
-    paddingVertical: 13,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    gap: 8,
-    marginTop: 6,
-  },
-  deleteFullBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-  editCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    gap: 14,
-  },
-  fieldGroup: {
-    gap: 5,
-  },
-  fieldLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    color: '#64748B',
-  },
-  textInput: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  chipSelected: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#3B82F6',
-  },
-  chipText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  chipTextSelected: {
-    color: '#3B82F6',
-    fontWeight: '700',
-  },
-  rowTwoCols: {
-    flexDirection: 'row',
-    gap: 12,
+    color: '#94A3B8',
   },
   rawSection: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-    overflow: 'hidden',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    borderColor: '#E2E8F0',
+    gap: 8,
   },
   rawHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 14,
-    backgroundColor: '#F8FAFC',
   },
-  rawHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  rawHeaderTitle: {
-    fontSize: 13,
+  rawTitle: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#334155',
+    color: '#64748B',
   },
-  rawBody: {
-    padding: 14,
-    backgroundColor: '#F8FAFC',
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  rawContentText: {
+  rawBodyText: {
     fontSize: 12,
-    color: '#475569',
+    color: '#334155',
     lineHeight: 18,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    justifyContent: 'center',
+    padding: 32,
+    gap: 12,
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0F172A',
-    marginVertical: 12,
+    color: '#64748B',
   },
   backBtn: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 14,
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
   },
   backBtnText: {
     fontSize: 13,

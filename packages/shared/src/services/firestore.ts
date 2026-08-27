@@ -16,8 +16,11 @@ import {
   QuerySnapshot,
   DocumentData,
   FirestoreError,
+  increment,
+  getCountFromServer,
+  runTransaction,
 } from 'firebase/firestore';
-import { CalendarEvent, ExtractedEvent } from '../types/event';
+import { CalendarEvent, ExtractedEvent, CommunityEvent, UserRole } from '../types/event';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -182,8 +185,192 @@ export function subscribeToUserEvents(
       onUpdate(events);
     },
     (error: FirestoreError) => {
-      console.error('Firestore subscription error:', error);
+      console.warn('Firestore subscription status:', error.message);
       if (onError) onError(error);
     }
   );
+}
+
+/** Subscribe to real-time live platform user count from Firestore */
+export function subscribeToLiveUserCount(
+  onUpdate: (count: number | null) => void
+): Unsubscribe {
+  const db = getDb();
+  const statsDoc = doc(db, 'public_stats', 'platform');
+
+  return onSnapshot(
+    statsDoc,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (typeof data.totalUsers === 'number' && data.totalUsers > 0) {
+          onUpdate(data.totalUsers);
+        } else {
+          onUpdate(null); // Doc exists but count not set yet
+        }
+      } else {
+        onUpdate(null); // Doc doesn't exist yet — no users counted yet
+      }
+    },
+    (err) => {
+      console.warn('Live stats subscription note:', err.message);
+      onUpdate(null); // On error, show nothing rather than a fake number
+    }
+  );
+}
+
+/** Fetch user role ('admin' | 'student') from Firestore */
+export async function fetchUserRole(uid: string): Promise<UserRole> {
+  try {
+    const db = getDb();
+    const userDoc = doc(db, 'users', uid);
+    const snap = await getDoc(userDoc);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.role === 'admin') return 'admin';
+    }
+  } catch (e) {
+    console.warn('Could not fetch user role, defaulting to student:', e);
+  }
+  return 'student';
+}
+
+/** Subscribe to live community events for a specific college (e.g. SIES_GST) */
+export function subscribeToCommunityEvents(
+  college: string = 'SIES_GST',
+  onUpdate: (events: CommunityEvent[]) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  const db = getDb();
+  const q = query(
+    collection(db, 'communityEvents'),
+    orderBy('created_at', 'desc')
+  );
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: CommunityEvent[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as CommunityEvent;
+        if (!college || data.college === college) {
+          list.push({ ...data, id: docSnap.id });
+        }
+      });
+      onUpdate(list);
+    },
+    (error: FirestoreError) => {
+      console.warn('Community events subscription note:', error.message);
+      if (onError) onError(error);
+    }
+  );
+}
+
+/** Create a new community event (Admin only) */
+export async function createCommunityEvent(
+  eventData: Omit<CommunityEvent, 'id' | 'created_at' | 'updated_at'> & { id?: string }
+): Promise<CommunityEvent> {
+  const db = getDb();
+  const colRef = collection(db, 'communityEvents');
+  const eventDoc = eventData.id ? doc(colRef, eventData.id) : doc(colRef);
+  const now = new Date().toISOString();
+
+  const finalEvent: CommunityEvent = {
+    ...eventData,
+    id: eventDoc.id,
+    created_at: now,
+    updated_at: now,
+    college: eventData.college || 'SIES_GST',
+    tags: eventData.tags || [],
+  };
+
+  await setDoc(eventDoc, finalEvent);
+  return finalEvent;
+}
+
+/** Batch publish extracted events to community feed (Admin only) */
+export async function batchPublishCommunityEvents(
+  extractedEvents: ExtractedEvent[],
+  adminUid: string,
+  college: string = 'SIES_GST'
+): Promise<CommunityEvent[]> {
+  const db = getDb();
+  const batch = writeBatch(db);
+  const colRef = collection(db, 'communityEvents');
+  const now = new Date().toISOString();
+  const published: CommunityEvent[] = [];
+
+  for (const ext of extractedEvents) {
+    const eventDoc = doc(colRef);
+    const item: CommunityEvent = {
+      id: eventDoc.id,
+      title: ext.title,
+      type: ext.type,
+      event_start_date: ext.event_start_date,
+      event_end_date: ext.event_end_date,
+      registration_deadline: ext.registration_deadline,
+      time: ext.time,
+      mode: ext.mode,
+      location: ext.location,
+      registration_link: ext.registration_link,
+      description: ext.raw_text,
+      college,
+      createdBy: adminUid,
+      created_at: now,
+      updated_at: now,
+      source_group: ext.source_group,
+      tags: ext.tags || [],
+    };
+    batch.set(eventDoc, item);
+    published.push(item);
+  }
+
+  await batch.commit();
+  return published;
+}
+
+/** Delete a community event (Admin only) */
+export async function deleteCommunityEvent(eventId: string): Promise<void> {
+  const db = getDb();
+  const eventDoc = doc(db, 'communityEvents', eventId);
+  await deleteDoc(eventDoc);
+}
+
+/** Track user registration count in live platform stats with atomic transaction */
+export async function trackUserRegistration(uid: string): Promise<void> {
+  try {
+    const db = getDb();
+    const userDoc = doc(db, 'users', uid);
+    const statsDoc = doc(db, 'public_stats', 'platform');
+
+    await runTransaction(db, async (tx) => {
+      const userSnap = await tx.get(userDoc);
+      const isAlreadyCounted = userSnap.exists() && userSnap.data()?.counted_in_stats === true;
+
+      if (isAlreadyCounted) {
+        return; // Already counted, do nothing
+      }
+
+      tx.set(
+        userDoc,
+        {
+          uid,
+          registered_at: userSnap.exists() ? (userSnap.data()?.registered_at || new Date().toISOString()) : new Date().toISOString(),
+          counted_in_stats: true,
+        },
+        { merge: true }
+      );
+
+      tx.set(
+        statsDoc,
+        {
+          totalUsers: increment(1),
+          last_active: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    });
+  } catch (e) {
+    // Non-critical background telemetry
+  }
 }

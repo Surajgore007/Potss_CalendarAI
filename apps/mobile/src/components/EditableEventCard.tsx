@@ -16,8 +16,10 @@ import {
   EVENT_MODE_CONFIG,
   CONFIDENCE_LOW_THRESHOLD,
   validateEventForSave,
+  THEME_DESIGN,
 } from '@eventpulse/shared';
 import { ConfidenceBadge } from './ConfidenceBadge';
+import { colors, radii, shadows } from '../theme/tokens';
 
 interface EditableEventCardProps {
   event: ExtractedEvent;
@@ -45,7 +47,6 @@ export const EditableEventCard: React.FC<EditableEventCardProps> = ({
 
   const issues = validateEventForSave(event);
   const hasErrors = issues.some((i) => i.severity === 'error');
-  const isLowConfidence = event.confidence_score < CONFIDENCE_LOW_THRESHOLD;
   const isMissingDates = !event.event_start_date && !event.registration_deadline;
 
   const handleChange = (field: keyof ExtractedEvent, value: any) => {
@@ -66,7 +67,7 @@ export const EditableEventCard: React.FC<EditableEventCardProps> = ({
           <ConfidenceBadge score={event.confidence_score} />
           {event.duplicate_warning?.is_duplicate && (
             <View style={styles.duplicateBadge}>
-              <Ionicons name="copy-outline" size={11} color="#F59E0B" style={{ marginRight: 3 }} />
+              <Ionicons name="copy-outline" size={11} color="#D97706" style={{ marginRight: 3 }} />
               <Text style={styles.duplicateText}>Possible Duplicate</Text>
             </View>
           )}
@@ -78,223 +79,207 @@ export const EditableEventCard: React.FC<EditableEventCardProps> = ({
             onPress={() => setIsExpanded((prev) => !prev)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#94A3B8" />
+            <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#64748B" />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.iconBtn, styles.deleteBtn]}
             onPress={onDelete}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="trash-outline" size={16} color="#F87171" />
+            <Ionicons name="trash-outline" size={15} color="#E11D48" />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Warnings & Alerts */}
+      {/* Missing Dates Alert */}
       {isMissingDates && (
         <View style={styles.missingDateBanner}>
-          <Ionicons name="alert-circle" size={16} color="#EF4444" />
+          <Ionicons name="alert-circle" size={16} color="#E11D48" />
           <Text style={styles.missingDateText}>
-            Dates missing from message. Please enter the Event Date or Registration Deadline below.
+            Dates missing. Please specify the Event Date or Registration Deadline below.
           </Text>
         </View>
       )}
 
-      {isLowConfidence && !isMissingDates && (
-        <View style={styles.warningBanner}>
-          <Ionicons name="warning-outline" size={16} color="#F59E0B" />
-          <Text style={styles.warningText}>
-            Low AI extraction confidence. Please verify all fields before saving.
-          </Text>
-        </View>
-      )}
+      {isExpanded && (
+        <View style={styles.cardBody}>
+          {/* Title Input */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>EVENT TITLE *</Text>
+            <TextInput
+              style={styles.input}
+              value={event.title}
+              onChangeText={(t) => handleChange('title', t)}
+              placeholder="e.g. HackNITR 6.0 Hackathon"
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
 
-      {event.duplicate_warning?.is_duplicate && (
-        <View style={styles.duplicateBanner}>
-          <Ionicons name="copy" size={14} color="#F59E0B" />
-          <Text style={styles.duplicateBannerText}>
-            Matches existing: "{event.duplicate_warning.matched_event_title}"
-          </Text>
-        </View>
-      )}
-
-      {/* Editable Fields */}
-      <View style={styles.content}>
-        {/* Title Field */}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.fieldLabel}>EVENT TITLE *</Text>
-          <TextInput
-            style={styles.textInput}
-            value={event.title}
-            onChangeText={(text) => handleChange('title', text)}
-            placeholder="e.g. AI Hackathon 2026"
-            placeholderTextColor="#475569"
-          />
-        </View>
-
-        {/* Type Selector */}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.fieldLabel}>EVENT TYPE</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-            {EVENT_TYPES.map((t) => {
-              const selected = event.type === t;
-              const config = EVENT_TYPE_CONFIG[t];
-              return (
-                <TouchableOpacity
-                  key={t}
-                  style={[
-                    styles.chip,
-                    selected && { backgroundColor: config.accentColor, borderColor: config.accentColor },
-                  ]}
-                  onPress={() => handleChange('type', t)}
-                >
-                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                    {config.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {isExpanded && (
-          <>
-            {/* Mode Selector */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>DELIVERY MODE</Text>
-              <View style={styles.modeRow}>
-                {EVENT_MODES.map((m) => {
-                  const selected = event.mode === m;
-                  const config = EVENT_MODE_CONFIG[m];
-                  return (
-                    <TouchableOpacity
-                      key={m}
-                      style={[styles.modeButton, selected && styles.modeButtonSelected]}
-                      onPress={() => handleChange('mode', m)}
+          {/* Event Type Selector */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>CATEGORY</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
+              {EVENT_TYPES.map((type) => {
+                const isSelected = event.type === type;
+                const conf = EVENT_TYPE_CONFIG[type] || EVENT_TYPE_CONFIG.other;
+                return (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.typePill,
+                      isSelected && { backgroundColor: conf.badgeBg, borderColor: conf.accentColor },
+                    ]}
+                    onPress={() => handleChange('type', type)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={conf.icon as any}
+                      size={12}
+                      color={isSelected ? conf.badgeText : '#64748B'}
+                    />
+                    <Text
+                      style={[
+                        styles.typePillText,
+                        isSelected && { color: conf.badgeText, fontWeight: '700' },
+                      ]}
                     >
-                      <Ionicons
-                        name={config.icon as any}
-                        size={13}
-                        color={selected ? '#FFFFFF' : '#94A3B8'}
-                        style={{ marginRight: 4 }}
-                      />
-                      <Text style={[styles.modeButtonText, selected && styles.modeButtonTextSelected]}>
-                        {config.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+                      {conf.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* Event Mode Selector */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>MODE</Text>
+            <View style={styles.pillRow}>
+              {EVENT_MODES.map((mode) => {
+                const isSelected = event.mode === mode;
+                const conf = EVENT_MODE_CONFIG[mode];
+                return (
+                  <TouchableOpacity
+                    key={mode}
+                    style={[
+                      styles.modePill,
+                      isSelected && styles.modePillSelected,
+                    ]}
+                    onPress={() => handleChange('mode', mode)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={conf?.icon as any || 'globe-outline'}
+                      size={12}
+                      color={isSelected ? '#4F46E5' : '#64748B'}
+                    />
+                    <Text
+                      style={[
+                        styles.modePillText,
+                        isSelected && styles.modePillTextSelected,
+                      ]}
+                    >
+                      {conf?.label || mode}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+          </View>
 
-            {/* Critical Dates Row: Registration Deadline & Event Start Date */}
-            <View style={styles.rowTwoCols}>
-              <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <View style={styles.labelWithIcon}>
-                  <Ionicons name="alarm" size={12} color="#D97706" />
-                  <Text style={[styles.fieldLabel, { color: '#B45309' }]}>REG. DEADLINE</Text>
-                </View>
-                <TextInput
-                  style={[styles.textInput, styles.deadlineInput]}
-                  value={event.registration_deadline || ''}
-                  onChangeText={(text) => handleChange('registration_deadline', text || null)}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#94A3B8"
-                />
-              </View>
-
-              <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <View style={styles.labelWithIcon}>
-                  <Ionicons name="calendar" size={12} color="#2563EB" />
-                  <Text style={[styles.fieldLabel, { color: '#1D4ED8' }]}>EVENT START</Text>
-                </View>
-                <TextInput
-                  style={styles.textInput}
-                  value={event.event_start_date || ''}
-                  onChangeText={(text) => handleChange('event_start_date', text || null)}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#94A3B8"
-                />
-              </View>
-            </View>
-
-            {/* Optional End Date & Time */}
-            <View style={styles.rowTwoCols}>
-              <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text style={styles.fieldLabel}>EVENT END DATE</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={event.event_end_date || ''}
-                  onChangeText={(text) => handleChange('event_end_date', text || null)}
-                  placeholder="YYYY-MM-DD (opt)"
-                  placeholderTextColor="#94A3B8"
-                />
-              </View>
-
-              <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text style={styles.fieldLabel}>TIME (24H)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={event.time || ''}
-                  onChangeText={(text) => handleChange('time', text || null)}
-                  placeholder="e.g. 10:00"
-                  placeholderTextColor="#94A3B8"
-                />
-              </View>
-            </View>
-
-            {/* Location */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>LOCATION / PLATFORM</Text>
+          {/* Date & Time Grid */}
+          <View style={styles.rowTwoCols}>
+            <View style={styles.colField}>
+              <Text style={styles.fieldLabel}>START DATE (YYYY-MM-DD)</Text>
               <TextInput
-                style={styles.textInput}
-                value={event.location || ''}
-                onChangeText={(text) => handleChange('location', text || null)}
-                placeholder="e.g. Microsoft Reactor, Bengaluru or Online / Discord"
+                style={styles.input}
+                value={event.event_start_date || ''}
+                onChangeText={(t) => handleChange('event_start_date', t || null)}
+                placeholder="2026-10-18"
                 placeholderTextColor="#94A3B8"
+                maxLength={10}
               />
             </View>
 
-            {/* Registration Link */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>REGISTRATION LINK (URL)</Text>
+            <View style={styles.colField}>
+              <Text style={styles.fieldLabel}>END DATE (OPTIONAL)</Text>
               <TextInput
-                style={styles.textInput}
-                value={event.registration_link || ''}
-                onChangeText={(text) => handleChange('registration_link', text || null)}
-                placeholder="https://..."
+                style={styles.input}
+                value={event.event_end_date || ''}
+                onChangeText={(t) => handleChange('event_end_date', t || null)}
+                placeholder="2026-10-20"
                 placeholderTextColor="#94A3B8"
-                autoCapitalize="none"
-                keyboardType="url"
+                maxLength={10}
+              />
+            </View>
+          </View>
+
+          <View style={styles.rowTwoCols}>
+            <View style={styles.colField}>
+              <Text style={styles.fieldLabel}>REGISTRATION DEADLINE</Text>
+              <TextInput
+                style={styles.input}
+                value={event.registration_deadline || ''}
+                onChangeText={(t) => handleChange('registration_deadline', t || null)}
+                placeholder="2026-10-10"
+                placeholderTextColor="#94A3B8"
+                maxLength={10}
               />
             </View>
 
-            {/* Source Group */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>WHATSAPP GROUP / SOURCE</Text>
+            <View style={styles.colField}>
+              <Text style={styles.fieldLabel}>TIME (24H HH:MM)</Text>
               <TextInput
-                style={styles.textInput}
-                value={event.source_group || ''}
-                onChangeText={(text) => handleChange('source_group', text || null)}
-                placeholder="e.g. Bangalore Techies WhatsApp"
+                style={styles.input}
+                value={event.time || ''}
+                onChangeText={(t) => handleChange('time', t || null)}
+                placeholder="10:00"
                 placeholderTextColor="#94A3B8"
+                maxLength={5}
               />
             </View>
-          </>
-        )}
-      </View>
+          </View>
 
-      {/* Action Footer */}
-      <View style={styles.cardFooter}>
-        <TouchableOpacity
-          style={[styles.saveSingleBtn, hasErrors && styles.btnDisabled]}
-          onPress={onSaveSingle}
-          disabled={hasErrors || isSaving}
-        >
-          <Ionicons name="checkmark-circle-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <Text style={styles.saveSingleBtnText}>Save This Event</Text>
-        </TouchableOpacity>
-      </View>
+          {/* Location & Link */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>LOCATION / VENUE</Text>
+            <TextInput
+              style={styles.input}
+              value={event.location || ''}
+              onChangeText={(t) => handleChange('location', t || null)}
+              placeholder="e.g. NIT Rourkela or Discord"
+              placeholderTextColor="#94A3B8"
+              maxLength={300}
+            />
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>REGISTRATION / DEVPOST LINK</Text>
+            <TextInput
+              style={styles.input}
+              value={event.registration_link || ''}
+              onChangeText={(t) => handleChange('registration_link', t || null)}
+              placeholder="https://hacknitr.devfolio.co"
+              placeholderTextColor="#94A3B8"
+              autoCapitalize="none"
+              maxLength={1000}
+            />
+          </View>
+
+          {/* Save Single Button */}
+          {total > 1 && (
+            <TouchableOpacity
+              style={styles.saveSingleBtn}
+              onPress={onSaveSingle}
+              disabled={isSaving}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark-circle-outline" size={15} color="#4F46E5" />
+              <Text style={styles.saveSingleText}>Save this event only</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 };
@@ -302,233 +287,176 @@ export const EditableEventCard: React.FC<EditableEventCardProps> = ({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    borderRadius: radii.card,
+    padding: 16,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-    overflow: 'hidden',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    marginBottom: 12,
+    borderColor: colors.glassBorder,
+    ...shadows.card,
   },
   cardErrorBorder: {
-    borderColor: '#EF4444',
+    borderColor: colors.danger,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#F8FAFC',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    flexWrap: 'wrap',
   },
   indexBadge: {
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 8,
+    backgroundColor: colors.canvasSubtle,
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
   },
   indexText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#334155',
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
   duplicateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
+    backgroundColor: colors.warningLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   duplicateText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#B45309',
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.warning,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   iconBtn: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+    borderRadius: radii.control,
+    backgroundColor: colors.canvasSubtle,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.glassBorder,
   },
   deleteBtn: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#FECACA',
+    backgroundColor: colors.dangerLight,
+    borderColor: 'rgba(220, 38, 38, 0.2)',
   },
   missingDateBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.dangerLight,
+    borderRadius: radii.control,
     padding: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#FECACA',
+    gap: 8,
+    marginTop: 12,
   },
   missingDateText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#B91C1C',
-    lineHeight: 16,
-  },
-  warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFFBEB',
-    padding: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#FDE68A',
-  },
-  warningText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#92400E',
-    lineHeight: 16,
-  },
-  duplicateBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FEF3C7',
-    padding: 8,
-    paddingHorizontal: 16,
-  },
-  duplicateBannerText: {
     fontSize: 11,
-    color: '#92400E',
-    fontWeight: '500',
+    color: colors.danger,
+    fontWeight: '600',
+    flex: 1,
   },
-  content: {
-    padding: 16,
-    gap: 14,
+  cardBody: {
+    marginTop: 14,
+    gap: 12,
   },
   fieldGroup: {
     gap: 5,
   },
   fieldLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
+    color: colors.textSecondary,
     letterSpacing: 0.5,
-    color: '#64748B',
   },
-  labelWithIcon: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  textInput: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  deadlineInput: {
-    borderColor: '#FCD34D',
-    backgroundColor: '#FFFBEB',
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: 6,
-    paddingVertical: 2,
-  },
-  chip: {
+  input: {
+    backgroundColor: colors.canvasSubtle,
+    borderRadius: radii.control,
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
-    backgroundColor: '#F8FAFC',
+    paddingVertical: 10,
+    fontSize: 13,
+    color: colors.textPrimary,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.glassBorder,
   },
-  chipText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  chipTextSelected: {
-    color: '#FFFFFF',
-  },
-  modeRow: {
+  pillRow: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  modeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 9,
-    borderRadius: 12,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     gap: 6,
   },
-  modeButtonSelected: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#3B82F6',
+  typePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radii.control,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    gap: 5,
   },
-  modeButtonText: {
-    fontSize: 12,
-    color: '#64748B',
+  typePillText: {
+    fontSize: 11,
     fontWeight: '600',
+    color: colors.textSecondary,
   },
-  modeButtonTextSelected: {
-    color: '#3B82F6',
+  modePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radii.control,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    gap: 5,
+  },
+  modePillSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  modePillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  modePillTextSelected: {
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   rowTwoCols: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
-  cardFooter: {
-    padding: 14,
-    backgroundColor: '#F8FAFC',
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    alignItems: 'flex-end',
+  colField: {
+    flex: 1,
+    gap: 5,
   },
   saveSingleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#10B981',
-    paddingHorizontal: 16,
+    justifyContent: 'center',
+    backgroundColor: colors.canvasSubtle,
     paddingVertical: 9,
-    borderRadius: 12,
+    borderRadius: radii.control,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     gap: 6,
+    marginTop: 4,
   },
-  btnDisabled: {
-    backgroundColor: '#94A3B8',
-    opacity: 0.7,
-  },
-  saveSingleBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  saveSingleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 });

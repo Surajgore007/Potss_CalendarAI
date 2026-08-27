@@ -1,0 +1,73 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isPlatformAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && (!('role' in request.resource.data) || request.resource.data.role == 'student');
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && (!('role' in request.resource.data) || (resource.data != null && 'role' in resource.data && request.resource.data.role == resource.data.role) || isPlatformAdmin());
+
+      match /events/{eventId} {
+        function ownsEvent(data) {
+          return data.userId == userId && data.id == eventId;
+        }
+
+        function validEvent(data) {
+          return data.title is string
+            && data.title.size() > 0
+            && data.title.size() <= 300
+            && data.type in ['hackathon', 'ctf', 'meetup', 'workshop', 'deadline', 'other']
+            && data.mode in ['online', 'offline', 'hybrid']
+            && data.status in ['upcoming', 'past', 'registered', 'skipped']
+            && (!('raw_text' in data) || data.raw_text == null || (data.raw_text is string && data.raw_text.size() <= 100000))
+            && data.confidence_score is number
+            && data.confidence_score >= 0
+            && data.confidence_score <= 1
+            && data.created_at is string
+            && data.updated_at is string;
+        }
+
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+          && request.auth.uid == userId
+          && ownsEvent(request.resource.data)
+          && validEvent(request.resource.data);
+        allow update: if request.auth != null
+          && request.auth.uid == userId
+          && ownsEvent(resource.data)
+          && ownsEvent(request.resource.data)
+          && request.resource.data.created_at == resource.data.created_at
+          && validEvent(request.resource.data);
+        allow delete: if request.auth != null
+          && request.auth.uid == userId
+          && ownsEvent(resource.data);
+      }
+    }
+
+    match /communityEvents/{eventId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isPlatformAdmin();
+    }
+
+    match /extractionUsage/{usageId} {
+      // Cloudflare Worker backend only (accessed via service account REST API)
+      allow read, write: if false;
+    }
+
+    match /public_stats/{statId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

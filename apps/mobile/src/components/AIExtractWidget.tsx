@@ -5,17 +5,18 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { GlassCard } from './ui/GlassCard';
+import { colors, radii, shadows } from '../theme/tokens';
 
 interface AIExtractWidgetProps {
   userName?: string;
 }
 
 export const AIExtractWidget: React.FC<AIExtractWidgetProps> = ({
-  userName = 'Suraj',
+  userName = 'User',
 }) => {
   const router = useRouter();
   const [quickText, setQuickText] = useState('');
@@ -25,7 +26,6 @@ export const AIExtractWidget: React.FC<AIExtractWidgetProps> = ({
       router.push('/extract');
       return;
     }
-    // Navigate to extract screen with the prefilled text
     router.push({
       pathname: '/extract',
       params: { initialText: quickText },
@@ -33,157 +33,156 @@ export const AIExtractWidget: React.FC<AIExtractWidgetProps> = ({
   };
 
   return (
-    <View style={styles.container}>
-      {/* 3D Soft Gradient Sphere / Icon */}
-      <View style={styles.sphereContainer}>
-        <View style={styles.sphereGlow}>
-          <Ionicons name="sparkles" size={32} color="#3B82F6" />
+    <GlassCard contentStyle={styles.cardContent}>
+      {/* Top Badge & Greeting */}
+      <View style={styles.topRow}>
+        <View style={styles.badgeWrap}>
+          <Ionicons name="sparkles-outline" size={13} color={colors.textPrimary} />
+          <Text style={styles.badgeText} numberOfLines={1}>Smart Extraction</Text>
         </View>
+        <Text style={styles.speedText} numberOfLines={1}>Instant</Text>
       </View>
 
-      {/* Greeting Title */}
-      <Text style={styles.greetingTitle}>Welcome, {userName}</Text>
-      <Text style={styles.greetingSubtitle}>
-        What events or deadlines can I extract today?
+      <Text style={styles.greetingTitle} numberOfLines={1}>Welcome back, {userName}</Text>
+      <Text style={styles.greetingSubtitle} numberOfLines={2}>
+        Paste any message or announcement to extract dates and deadlines instantly.
       </Text>
 
-      {/* Quick Action Chips */}
+      {/* Quick Action Pills */}
       <View style={styles.chipRow}>
         <TouchableOpacity
           style={styles.actionChip}
           onPress={() => router.push('/extract')}
+          activeOpacity={0.8}
         >
-          <Ionicons name="clipboard-outline" size={13} color="#475569" />
-          <Text style={styles.actionChipText}>Paste WhatsApp</Text>
+          <Ionicons name="clipboard-outline" size={13} color={colors.textPrimary} />
+          <Text style={styles.actionChipText} numberOfLines={1}>Open Studio</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.actionChip}
           onPress={() => router.push('/calendar')}
+          activeOpacity={0.8}
         >
-          <Ionicons name="warning-outline" size={13} color="#475569" />
-          <Text style={styles.actionChipText}>Check Clashes</Text>
+          <Ionicons name="git-compare-outline" size={13} color={colors.textSecondary} />
+          <Text style={styles.actionChipText} numberOfLines={1}>Timeline & Conflicts</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Input Box */}
+      {/* Quick Input Bar */}
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.input}
-          placeholder="Paste message or ask anything..."
-          placeholderTextColor="#94A3B8"
+          placeholder="Paste message text here..."
+          placeholderTextColor={colors.textTertiary}
           value={quickText}
           onChangeText={setQuickText}
+          maxLength={10000}
           onSubmitEditing={handleQuickExtract}
         />
         <TouchableOpacity
           style={styles.sendBtn}
           onPress={handleQuickExtract}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
         >
-          <Ionicons name="send" size={15} color="#FFFFFF" />
+          <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
-    </View>
+    </GlassCard>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-    flex: 1,
-    minWidth: 280,
+  cardContent: {
+    padding: 16,
+    gap: 12,
+  },
+  topRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  sphereContainer: {
-    marginBottom: 12,
+  badgeWrap: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  sphereGlow: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 4,
+    gap: 5,
+    backgroundColor: colors.canvasSubtle,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: 'rgba(191, 219, 254, 0.6)',
+    borderColor: colors.glassBorder,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  speedText: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    fontWeight: '500',
   },
   greetingTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
-    textAlign: 'center',
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
+    lineHeight: 24,
   },
   greetingSubtitle: {
     fontSize: 13,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 4,
-    marginBottom: 16,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   chipRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
-    justifyContent: 'center',
-    marginBottom: 16,
+    flexWrap: 'wrap',
   },
   actionChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    gap: 6,
+    backgroundColor: colors.canvasSubtle,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    borderRadius: 20,
+    borderRadius: radii.control,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 6,
+    borderColor: colors.glassBorder,
   },
   actionChipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
+    color: colors.textPrimary,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 24,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: radii.control,
+    paddingLeft: 12,
+    paddingRight: 4,
+    paddingVertical: 4,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    width: '100%',
+    borderColor: colors.glassBorder,
+    ...shadows.subtle,
   },
   input: {
     flex: 1,
     fontSize: 13,
-    color: '#0F172A',
-    paddingVertical: 4,
+    color: colors.textPrimary,
+    paddingVertical: 6,
+    minWidth: 0,
   },
   sendBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#3B82F6',
+    width: 34,
+    height: 34,
+    borderRadius: radii.control - 4,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 8,
   },
 });
