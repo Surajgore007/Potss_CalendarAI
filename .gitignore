@@ -14,10 +14,13 @@ ios/
 
 # Environment variables & secrets
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env*
+.dev.vars
+*.pem
+*.key
+*.keystore
+*secret*.json
+serviceAccountKey.json
 google-services.json
 GoogleService-Info.plist
 
