@@ -48,6 +48,9 @@ export interface CommunityEvent {
   updated_at: string;
   source_group?: string | null;
   tags: string[];
+  attendeesCount?: number;
+  attendees?: string[]; // Array of bare student UIDs
+  attendeePreviews?: Record<string, string>; // Map of { [uid]: userInitials }
 }
 
 export interface ExtractedEvent {
@@ -118,4 +121,22 @@ export interface UserProfile {
   role: UserRole;
   defaultReminderOffsets: number[];
   lastSyncedAt?: string;
+  pushToken?: string | null;
+  pushTokenUpdatedAt?: string;
+  college?: string;
+}
+
+export interface BroadcastNotificationRequest {
+  eventId: string;
+  title: string;
+  body: string;
+  eventType?: EventType;
+  college?: string;
+}
+
+export interface BroadcastNotificationResponse {
+  success: boolean;
+  recipientsCount: number;
+  deduplicated?: boolean;
+  message?: string;
 }

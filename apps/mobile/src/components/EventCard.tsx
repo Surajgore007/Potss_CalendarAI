@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import {
   CalendarEvent,
   formatFriendlyDate,
+  formatTime12Hour,
   getUrgencyInfo,
   EVENT_MODE_CONFIG,
 } from '@eventpulse/shared';
@@ -123,7 +124,7 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onPress, hasClash }
                 {event.event_end_date
                   ? ` - ${formatFriendlyDate(event.event_end_date, false)}`
                   : ''}
-                {event.time ? ` • ${event.time}` : ''}
+                {event.time ? ` • ${formatTime12Hour(event.time)}` : ''}
               </Text>
             </View>
           </View>

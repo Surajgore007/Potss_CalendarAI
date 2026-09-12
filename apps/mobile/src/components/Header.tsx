@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import { useEvents } from '../context/EventsContext';
+import { getDaysDifference } from '@eventpulse/shared';
 import { colors, radii, shadows } from '../theme/tokens';
+import { NotificationCenterModal } from './NotificationCenterModal';
 
 export interface HeaderProps {
   title?: string;
@@ -38,8 +41,20 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const router = useRouter();
   const { user } = useAuth();
+  const { events } = useEvents();
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Count active urgent deadlines (<=2d) and upcoming events (<=7d)
+  const alertCount = useMemo(() => {
+    return events.filter((e) => {
+      if (e.status === 'skipped') return false;
+      const dlDiff = e.registration_deadline ? getDaysDifference(e.registration_deadline) : -1;
+      const evDiff = e.event_start_date ? getDaysDifference(e.event_start_date) : -1;
+      return (dlDiff >= 0 && dlDiff <= 2) || (evDiff >= 0 && evDiff <= 7);
+    }).length;
+  }, [events]);
 
   // Simple title bar mode (for detail & sub screens)
   if (title) {
@@ -62,19 +77,21 @@ export const Header: React.FC<HeaderProps> = ({
         </View>
 
         {rightAction || (
-          <TouchableOpacity
-            style={styles.userProfilePill}
-            onPress={() => router.push('/(auth)/settings' as any)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.avatarWrap}>
-              <Ionicons name="person" size={13} color="#4F46E5" />
-              <View style={styles.onlineDot} />
-            </View>
-            <Text style={styles.userNameText} numberOfLines={1}>
-              {user?.displayName?.split(' ')[0] || 'User'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.topRightActions}>
+            <TouchableOpacity
+              style={styles.userProfilePill}
+              onPress={() => router.push('/(auth)/settings' as any)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.avatarWrap}>
+                <Ionicons name="person" size={13} color="#4F46E5" />
+                <View style={styles.onlineDot} />
+              </View>
+              <Text style={styles.userNameText} numberOfLines={1}>
+                {user?.displayName?.split(' ')[0] || 'User'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     );
@@ -116,6 +133,19 @@ export const Header: React.FC<HeaderProps> = ({
           </TouchableOpacity>
 
           <TouchableOpacity
+            style={styles.notificationBellBtn}
+            onPress={() => setShowNotifications(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="notifications-outline" size={17} color={colors.textPrimary} />
+            {alertCount > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadBadgeText}>{alertCount > 9 ? '9+' : alertCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={styles.profileAvatarBtn}
             onPress={() => router.push('/(auth)/settings' as any)}
             activeOpacity={0.85}
@@ -125,6 +155,13 @@ export const Header: React.FC<HeaderProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Notification Center Modal */}
+      <NotificationCenterModal
+        visible={showNotifications}
+        onClose={() => setShowNotifications(false)}
+        events={events}
+      />
 
       {/* Search Input Bar */}
       <View style={styles.searchWrapper}>
@@ -280,6 +317,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  notificationBellBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: colors.canvasSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: '#EF4444',
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  unreadBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    lineHeight: 11,
   },
   profileAvatarBtn: {
     width: 34,

@@ -1,4 +1,11 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import {
+  getUserProfile,
+  checkBroadcastIdempotency,
+  recordBroadcastHistory,
+  queryCollegePushTokens,
+  sendExpoPushBatches,
+} from './notifications';
 
 export interface Env {
   GROQ_API_KEY: string;
@@ -267,7 +274,7 @@ const JSON_SCHEMA = {
       event_start_date: 'YYYY-MM-DD or null',
       event_end_date: 'YYYY-MM-DD or null',
       registration_deadline: 'YYYY-MM-DD or null',
-      time: 'HH:MM or null',
+      time: '12-hour format with AM/PM (e.g. "6:00 PM", "10:30 AM") or null if not mentioned',
       mode: 'online | offline | hybrid',
       location: 'string or null',
       registration_link: 'string (URL) or null',
@@ -496,6 +503,187 @@ export default {
       } catch (err: any) {
         console.error('Worker extraction error:', err);
         return jsonResponse({ error: 'Internal Server Error' }, 500);
+      }
+    }
+
+    // 5. Admin Community Push Notification Broadcast (Strictly Role-Gated & Scoped)
+    if (
+      request.method === 'POST' &&
+      (url.pathname === '/api/admin/broadcast-notification' || url.pathname === '/broadcast-notification')
+    ) {
+      try {
+        const authHeader = request.headers.get('Authorization');
+        let user: { uid: string; email?: string };
+        try {
+          user = await verifyFirebaseToken(authHeader, env);
+        } catch {
+          return jsonResponse({ error: 'UNAUTHORIZED', message: 'Valid admin authentication required.' }, 401);
+        }
+
+        // Strictly verify admin role & tenant college from Firestore via service account
+        const profile = await getUserProfile(user.uid, env);
+        if (profile.missingSecrets) {
+          return jsonResponse(
+            {
+              error: 'CONFIG_ERROR',
+              message: 'Firebase Service Account secrets (FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY) must be configured in Cloudflare Worker.',
+            },
+            503
+          );
+        }
+        if (profile.role !== 'admin') {
+          return jsonResponse({ error: 'FORBIDDEN', message: 'Only campus admins can broadcast push notifications.' }, 403);
+        }
+
+        const body = (await request.json()) as {
+          eventId?: string;
+          title?: string;
+          body?: string;
+          eventType?: string;
+        };
+
+        if (!body.eventId || !body.title) {
+          return jsonResponse({ error: 'BAD_REQUEST', message: 'eventId and title are required.' }, 400);
+        }
+
+        const adminCollege = profile.college || 'SIES_GST';
+        const eventTitle = body.title.trim();
+        const eventBody = body.body?.trim() || `New ${body.eventType || 'event'} added to ${adminCollege} feed!`;
+
+        // Check Idempotency: One broadcast per event
+        const idemp = await checkBroadcastIdempotency(body.eventId, env);
+        if (idemp.alreadyBroadcast) {
+          return jsonResponse(
+            {
+              success: true,
+              deduplicated: true,
+              recipientsCount: 0,
+              message: 'Broadcast already dispatched for this event.',
+              broadcastAt: idemp.timestamp,
+            },
+            200
+          );
+        }
+
+        // Query college student push tokens
+        const recipients = await queryCollegePushTokens(adminCollege, env);
+        if (recipients.length === 0) {
+          await recordBroadcastHistory(body.eventId, user.uid, adminCollege, eventTitle, 0, [], env);
+          return jsonResponse(
+            {
+              success: true,
+              recipientsCount: 0,
+              message: `No active student push tokens found for ${adminCollege}.`,
+            },
+            200
+          );
+        }
+
+        // Deduplicate tokens
+        const seenTokens = new Set<string>();
+        const uniqueRecipients = recipients.filter((r) => {
+          if (seenTokens.has(r.pushToken)) return false;
+          seenTokens.add(r.pushToken);
+          return true;
+        });
+
+        // Prepare push messages
+        const messages = uniqueRecipients.map((r) => ({
+          to: r.pushToken,
+          sound: 'default',
+          title: `📢 ${adminCollege === 'SIES_GST' ? 'SIES GST' : adminCollege}: ${eventTitle}`,
+          body: eventBody,
+          channelId: 'sies-gst-announcements',
+          data: {
+            type: 'community_event',
+            eventId: body.eventId,
+            college: adminCollege,
+          },
+        }));
+
+        // Send in batches of 100 with Tier 1 dead-token pruning
+        const { ticketIds } = await sendExpoPushBatches(messages, uniqueRecipients, env);
+
+        // Record broadcast history for idempotency
+        await recordBroadcastHistory(
+          body.eventId,
+          user.uid,
+          adminCollege,
+          eventTitle,
+          uniqueRecipients.length,
+          ticketIds,
+          env
+        );
+
+        return jsonResponse(
+          {
+            success: true,
+            recipientsCount: uniqueRecipients.length,
+            deduplicated: false,
+          },
+          200
+        );
+      } catch (broadcastErr: any) {
+        console.error('Admin broadcast error:', broadcastErr);
+        return jsonResponse({ error: 'INTERNAL_ERROR', message: broadcastErr?.message || 'Broadcast failed' }, 500);
+      }
+    }
+
+    // 6. Dead Token Pruning Endpoint (Tier 2 Receipts Inspection)
+    if (
+      request.method === 'POST' &&
+      (url.pathname === '/api/admin/prune-dead-tokens' || url.pathname === '/prune-dead-tokens')
+    ) {
+      try {
+        const authHeader = request.headers.get('Authorization');
+        let user: { uid: string; email?: string };
+        try {
+          user = await verifyFirebaseToken(authHeader, env);
+        } catch {
+          return jsonResponse({ error: 'UNAUTHORIZED' }, 401);
+        }
+
+        const profile = await getUserProfile(user.uid, env);
+        if (profile.missingSecrets) {
+          return jsonResponse(
+            {
+              error: 'CONFIG_ERROR',
+              message: 'Firebase Service Account secrets (FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY) must be configured in Cloudflare Worker.',
+            },
+            503
+          );
+        }
+        if (profile.role !== 'admin') {
+          return jsonResponse({ error: 'FORBIDDEN' }, 403);
+        }
+
+        const body = (await request.json()) as { ticketIds?: string[] };
+        if (!body.ticketIds || body.ticketIds.length === 0) {
+          return jsonResponse({ prunedCount: 0 }, 200);
+        }
+
+        // Fetch receipts from Expo
+        const receiptsRes = await fetch('https://exp.host/--/api/v2/push/getReceipts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: body.ticketIds }),
+        });
+
+        let prunedCount = 0;
+        if (receiptsRes.ok) {
+          const result = (await receiptsRes.json()) as { data: Record<string, any> };
+          const receipts = result.data || {};
+          for (const ticketId of Object.keys(receipts)) {
+            const receipt = receipts[ticketId];
+            if (receipt?.status === 'error' && receipt?.details?.error === 'DeviceNotRegistered') {
+              prunedCount++;
+            }
+          }
+        }
+
+        return jsonResponse({ success: true, prunedCount }, 200);
+      } catch (pruneErr: any) {
+        return jsonResponse({ error: 'INTERNAL_ERROR' }, 500);
       }
     }
 

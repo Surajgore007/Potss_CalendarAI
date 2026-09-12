@@ -20,6 +20,9 @@ import {
 } from '@eventpulse/shared';
 import { ConfidenceBadge } from './ConfidenceBadge';
 import { colors, radii, shadows } from '../theme/tokens';
+import { DatePickerModal } from './ui/DatePickerModal';
+import { TimePickerModal } from './ui/TimePickerModal';
+import { formatTime12Hour } from '@eventpulse/shared';
 
 interface EditableEventCardProps {
   event: ExtractedEvent;
@@ -44,6 +47,11 @@ export const EditableEventCard: React.FC<EditableEventCardProps> = ({
   isSaving = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [activeDatePicker, setActiveDatePicker] = useState<{
+    field: 'event_start_date' | 'event_end_date' | 'registration_deadline';
+    title: string;
+  } | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   const issues = validateEventForSave(event);
   const hasErrors = issues.some((i) => i.severity === 'error');
@@ -190,53 +198,100 @@ export const EditableEventCard: React.FC<EditableEventCardProps> = ({
           {/* Date & Time Grid */}
           <View style={styles.rowTwoCols}>
             <View style={styles.colField}>
-              <Text style={styles.fieldLabel}>START DATE (YYYY-MM-DD)</Text>
-              <TextInput
-                style={styles.input}
-                value={event.event_start_date || ''}
-                onChangeText={(t) => handleChange('event_start_date', t || null)}
-                placeholder="2026-10-18"
-                placeholderTextColor="#94A3B8"
-                maxLength={10}
-              />
+              <Text style={styles.fieldLabel}>START DATE</Text>
+              <View style={styles.inputWithIconRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={event.event_start_date || ''}
+                  onChangeText={(t) => handleChange('event_start_date', t || null)}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={10}
+                />
+                <TouchableOpacity
+                  style={styles.inputIconBtn}
+                  onPress={() =>
+                    setActiveDatePicker({
+                      field: 'event_start_date',
+                      title: 'Event Start Date',
+                    })
+                  }
+                >
+                  <Ionicons name="calendar-outline" size={16} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.colField}>
-              <Text style={styles.fieldLabel}>END DATE (OPTIONAL)</Text>
-              <TextInput
-                style={styles.input}
-                value={event.event_end_date || ''}
-                onChangeText={(t) => handleChange('event_end_date', t || null)}
-                placeholder="2026-10-20"
-                placeholderTextColor="#94A3B8"
-                maxLength={10}
-              />
+              <Text style={styles.fieldLabel}>END DATE</Text>
+              <View style={styles.inputWithIconRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={event.event_end_date || ''}
+                  onChangeText={(t) => handleChange('event_end_date', t || null)}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={10}
+                />
+                <TouchableOpacity
+                  style={styles.inputIconBtn}
+                  onPress={() =>
+                    setActiveDatePicker({
+                      field: 'event_end_date',
+                      title: 'Event End Date',
+                    })
+                  }
+                >
+                  <Ionicons name="calendar-outline" size={16} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
           <View style={styles.rowTwoCols}>
             <View style={styles.colField}>
-              <Text style={styles.fieldLabel}>REGISTRATION DEADLINE</Text>
-              <TextInput
-                style={styles.input}
-                value={event.registration_deadline || ''}
-                onChangeText={(t) => handleChange('registration_deadline', t || null)}
-                placeholder="2026-10-10"
-                placeholderTextColor="#94A3B8"
-                maxLength={10}
-              />
+              <Text style={styles.fieldLabel}>REG. DEADLINE</Text>
+              <View style={styles.inputWithIconRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={event.registration_deadline || ''}
+                  onChangeText={(t) => handleChange('registration_deadline', t || null)}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={10}
+                />
+                <TouchableOpacity
+                  style={styles.inputIconBtn}
+                  onPress={() =>
+                    setActiveDatePicker({
+                      field: 'registration_deadline',
+                      title: 'Registration Deadline',
+                    })
+                  }
+                >
+                  <Ionicons name="calendar-outline" size={16} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.colField}>
-              <Text style={styles.fieldLabel}>TIME (24H HH:MM)</Text>
-              <TextInput
-                style={styles.input}
-                value={event.time || ''}
-                onChangeText={(t) => handleChange('time', t || null)}
-                placeholder="10:00"
-                placeholderTextColor="#94A3B8"
-                maxLength={5}
-              />
+              <Text style={styles.fieldLabel}>TIME (12-HOUR)</Text>
+              <View style={styles.inputWithIconRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={event.time ? formatTime12Hour(event.time) : ''}
+                  onChangeText={(t) => handleChange('time', t || null)}
+                  placeholder="10:00 AM"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={12}
+                />
+                <TouchableOpacity
+                  style={styles.inputIconBtn}
+                  onPress={() => setShowTimePicker(true)}
+                >
+                  <Ionicons name="time-outline" size={16} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -280,6 +335,28 @@ export const EditableEventCard: React.FC<EditableEventCardProps> = ({
           )}
         </View>
       )}
+
+      {/* Date Picker Modal */}
+      <DatePickerModal
+        visible={activeDatePicker !== null}
+        title={activeDatePicker?.title || 'Select Date'}
+        initialDate={activeDatePicker ? (event[activeDatePicker.field] as string | null) : null}
+        onSelect={(dateStr) => {
+          if (activeDatePicker) {
+            handleChange(activeDatePicker.field, dateStr);
+          }
+        }}
+        onClose={() => setActiveDatePicker(null)}
+      />
+
+      {/* Time Picker Modal (12-Hour Clock) */}
+      <TimePickerModal
+        visible={showTimePicker}
+        title="Select Event Time"
+        initialTime={event.time}
+        onSelect={(timeStr) => handleChange('time', timeStr)}
+        onClose={() => setShowTimePicker(false)}
+      />
     </View>
   );
 };
@@ -441,6 +518,24 @@ const styles = StyleSheet.create({
   colField: {
     flex: 1,
     gap: 5,
+  },
+  inputWithIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.canvasSubtle,
+    borderRadius: radii.control,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    paddingRight: 6,
+  },
+  inputIconBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
   },
   saveSingleBtn: {
     flexDirection: 'row',

@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import {
   CalendarEvent,
   formatFriendlyDate,
+  formatTime12Hour,
   getDaysDifference,
   EVENT_TYPE_CONFIG,
   EVENT_MODE_CONFIG,
@@ -39,11 +40,7 @@ export const FutureEventsWidget: React.FC<FutureEventsWidgetProps> = ({ events }
 
   const formatTime = (time: string | null): string => {
     if (!time) return 'All Day';
-    const [h, m] = time.split(':').map(Number);
-    if (isNaN(h) || isNaN(m)) return time;
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const hr = h % 12 || 12;
-    return `${hr}:${String(m).padStart(2, '0')} ${ampm}`;
+    return formatTime12Hour(time);
   };
 
   const getDaysLabel = (event: CalendarEvent): string => {

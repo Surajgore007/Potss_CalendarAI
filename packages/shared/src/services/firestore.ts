@@ -17,10 +17,20 @@ import {
   DocumentData,
   FirestoreError,
   increment,
+  arrayUnion,
+  arrayRemove,
+  deleteField,
   getCountFromServer,
   runTransaction,
 } from 'firebase/firestore';
-import { CalendarEvent, ExtractedEvent, CommunityEvent, UserRole } from '../types/event';
+import {
+  CalendarEvent,
+  ExtractedEvent,
+  CommunityEvent,
+  UserRole,
+  BroadcastNotificationRequest,
+  BroadcastNotificationResponse,
+} from '../types/event';
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -68,6 +78,15 @@ export function getUserEventsRef(uid: string) {
   return collection(db, 'users', uid, 'events');
 }
 
+/** Generate a canonical Firestore document ID completely offline on the client */
+export function generateEventId(uid?: string): string {
+  const db = getDb();
+  if (uid) {
+    return doc(collection(db, 'users', uid, 'events')).id;
+  }
+  return doc(collection(db, 'events')).id;
+}
+
 /** Save a single event to Firestore under /users/{uid}/events/{eventId} */
 export async function saveEvent(
   uid: string,
@@ -87,6 +106,18 @@ export async function saveEvent(
     tags: eventData.tags || [],
     reminder_offsets: eventData.reminder_offsets || [4320, 1440, 0],
     status: eventData.status || 'upcoming',
+    type: (['hackathon', 'ctf', 'meetup', 'workshop', 'deadline', 'other'].includes(eventData.type)
+      ? eventData.type
+      : 'other') as any,
+    mode: (['online', 'offline', 'hybrid'].includes(eventData.mode)
+      ? eventData.mode
+      : 'offline') as any,
+    confidence_score:
+      typeof eventData.confidence_score === 'number' &&
+      eventData.confidence_score >= 0 &&
+      eventData.confidence_score <= 1
+        ? eventData.confidence_score
+        : 1.0,
   };
 
   await setDoc(eventDoc, finalEvent);
@@ -109,17 +140,24 @@ export async function batchSaveExtractedEvents(
     const event: CalendarEvent = {
       id: eventDoc.id,
       title: item.title,
-      type: item.type,
+      type: (['hackathon', 'ctf', 'meetup', 'workshop', 'deadline', 'other'].includes(item.type)
+        ? item.type
+        : 'other') as any,
       event_start_date: item.event_start_date,
       event_end_date: item.event_end_date,
       registration_deadline: item.registration_deadline,
       time: item.time,
-      mode: item.mode,
+      mode: (['online', 'offline', 'hybrid'].includes(item.mode) ? item.mode : 'offline') as any,
       location: item.location,
       registration_link: item.registration_link,
       source_group: item.source_group,
-      raw_text: item.raw_text,
-      confidence_score: item.confidence_score,
+      raw_text: item.raw_text || '',
+      confidence_score:
+        typeof item.confidence_score === 'number' &&
+        item.confidence_score >= 0 &&
+        item.confidence_score <= 1
+          ? item.confidence_score
+          : 1.0,
       tags: item.tags || [item.type, item.mode],
       reminder_offsets: item.reminder_offsets || [4320, 1440, 0],
       created_at: now,
@@ -282,6 +320,9 @@ export async function createCommunityEvent(
     updated_at: now,
     college: eventData.college || 'SIES_GST',
     tags: eventData.tags || [],
+    attendeesCount: 0,
+    attendees: [],
+    attendeePreviews: {},
   };
 
   await setDoc(eventDoc, finalEvent);
@@ -320,6 +361,9 @@ export async function batchPublishCommunityEvents(
       updated_at: now,
       source_group: ext.source_group,
       tags: ext.tags || [],
+      attendeesCount: 0,
+      attendees: [],
+      attendeePreviews: {},
     };
     batch.set(eventDoc, item);
     published.push(item);
@@ -334,6 +378,40 @@ export async function deleteCommunityEvent(eventId: string): Promise<void> {
   const db = getDb();
   const eventDoc = doc(db, 'communityEvents', eventId);
   await deleteDoc(eventDoc);
+}
+
+/**
+ * Toggle student attendance ("I'm Going") on a community event:
+ * - Updates attendees bare UID array via arrayUnion/arrayRemove
+ * - Updates single field path attendeePreviews.${userId} with user initials
+ * - Atomically increments/decrements attendeesCount
+ */
+export async function toggleCommunityEventAttendance(
+  eventId: string,
+  userId: string,
+  userInitials: string,
+  isJoining: boolean
+): Promise<void> {
+  const db = getDb();
+  const eventDoc = doc(db, 'communityEvents', eventId);
+  const now = new Date().toISOString();
+  const cleanInitials = (userInitials || 'ST').toUpperCase().slice(0, 4);
+
+  if (isJoining) {
+    await updateDoc(eventDoc, {
+      attendees: arrayUnion(userId),
+      [`attendeePreviews.${userId}`]: cleanInitials,
+      attendeesCount: increment(1),
+      updated_at: now,
+    });
+  } else {
+    await updateDoc(eventDoc, {
+      attendees: arrayRemove(userId),
+      [`attendeePreviews.${userId}`]: deleteField(),
+      attendeesCount: increment(-1),
+      updated_at: now,
+    });
+  }
 }
 
 /** Track user registration count in live platform stats with atomic transaction */
@@ -373,4 +451,51 @@ export async function trackUserRegistration(uid: string): Promise<void> {
   } catch (e) {
     // Non-critical background telemetry
   }
+}
+
+/** Save or clear Expo push token for a user in Firestore (/users/{uid}) */
+export async function saveUserPushToken(
+  uid: string,
+  pushToken: string | null,
+  college: string = 'SIES_GST'
+): Promise<void> {
+  const db = getDb();
+  const userDoc = doc(db, 'users', uid);
+  const now = new Date().toISOString();
+
+  await setDoc(
+    userDoc,
+    {
+      pushToken: pushToken || null,
+      pushTokenUpdatedAt: pushToken ? now : null,
+      college: college || 'SIES_GST',
+      updated_at: now,
+    },
+    { merge: true }
+  );
+}
+
+/** Broadcast an announcement push notification to all students in a college via Cloudflare Worker */
+export async function broadcastCommunityPushNotification(
+  workerUrl: string,
+  idToken: string,
+  payload: BroadcastNotificationRequest
+): Promise<BroadcastNotificationResponse> {
+  const url = `${workerUrl.replace(/\/$/, '')}/api/admin/broadcast-notification`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Broadcast failed' })) as any;
+    throw new Error(errorData.error || `Broadcast failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as BroadcastNotificationResponse;
 }

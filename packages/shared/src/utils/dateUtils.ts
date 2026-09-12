@@ -42,6 +42,149 @@ export function formatFriendlyDate(isoDate: string | null | undefined, includeDa
   return d.toLocaleDateString('en-US', options);
 }
 
+/**
+ * Format any time string (24-hour "18:00" or already 12-hour "6:00 PM") to clean 12-hour format with AM/PM (e.g. "6:00 PM", "10:30 AM")
+ */
+export function formatTime12Hour(timeStr: string | null | undefined): string {
+  if (!timeStr || typeof timeStr !== 'string') return '';
+  const trimmed = timeStr.trim();
+  if (!trimmed) return '';
+
+  // Match 12-hour with optional spaces before am/pm (e.g. "6:00 PM", "06:30am", "12:00PM")
+  const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+  if (match12) {
+    const hours = parseInt(match12[1], 10);
+    const minutes = match12[2];
+    const period = match12[3].toUpperCase();
+    return `${hours}:${minutes} ${period}`;
+  }
+
+  // Match 24-hour HH:MM
+  const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    let hours = parseInt(match24[1], 10);
+    const minutes = match24[2];
+    if (hours < 0 || hours > 23) return trimmed;
+
+    const period = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    if (hours === 0) hours = 12;
+
+    return `${hours}:${minutes} ${period}`;
+  }
+
+  return trimmed;
+}
+
+/**
+ * Helper to parse target Date object for a date string and optional time string (12H "6:00 PM" or 24H "18:00").
+ */
+export function parseDateTime(
+  dateStr: string,
+  timeStr?: string | null,
+  defaultHour = 23,
+  defaultMinute = 59,
+  defaultSecond = 59
+): Date | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return null;
+  const [year, month, day] = parts.map(Number);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+
+  let hours = defaultHour;
+  let minutes = defaultMinute;
+  let seconds = defaultSecond;
+
+  if (timeStr && typeof timeStr === 'string') {
+    const trimmed = timeStr.trim();
+    // 12-hour: e.g. "6:00 PM", "11:30 AM"
+    const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+    if (match12) {
+      let h = parseInt(match12[1], 10);
+      const m = parseInt(match12[2], 10);
+      const isPm = match12[3].toLowerCase() === 'pm';
+      if (isPm && h < 12) h += 12;
+      if (!isPm && h === 12) h = 0;
+      if (!isNaN(h) && !isNaN(m)) {
+        hours = h;
+        minutes = m;
+        seconds = 0;
+      }
+    } else {
+      // 24-hour: e.g. "18:00", "09:30"
+      const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+      if (match24) {
+        const h = parseInt(match24[1], 10);
+        const m = parseInt(match24[2], 10);
+        if (!isNaN(h) && !isNaN(m)) {
+          hours = h;
+          minutes = m;
+          seconds = 0;
+        }
+      }
+    }
+  }
+
+  return new Date(year, month - 1, day, hours, minutes, seconds, 999);
+}
+
+/**
+ * Check whether an event has completely finished based on end date, start date, or deadline.
+ */
+export function isEventFinished(
+  event: Pick<CalendarEvent, 'event_end_date' | 'event_start_date' | 'registration_deadline' | 'time' | 'status'>,
+  referenceDate: Date = new Date()
+): boolean {
+  if (event.status === 'past') return true;
+
+  const nowMs = referenceDate.getTime();
+
+  // 1. If event has an explicit end date, check against end date + time (default 23:59:59)
+  if (event.event_end_date) {
+    const endDate = parseDateTime(event.event_end_date, event.time, 23, 59, 59);
+    if (endDate && endDate.getTime() < nowMs) {
+      return true;
+    }
+    return false;
+  }
+
+  // 2. If event only has an event start date
+  if (event.event_start_date) {
+    // If no end date, event is considered active throughout the start day (until 23:59:59)
+    const startDate = parseDateTime(event.event_start_date, event.time, 23, 59, 59);
+    if (startDate && startDate.getTime() < nowMs) {
+      return true;
+    }
+    return false;
+  }
+
+  // 3. If event has only a registration deadline (no event dates)
+  if (event.registration_deadline) {
+    const deadlineDate = parseDateTime(event.registration_deadline, event.time, 23, 59, 59);
+    if (deadlineDate && deadlineDate.getTime() < nowMs) {
+      return true;
+    }
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * Check whether a registration deadline is currently active (today or in future, not passed).
+ */
+export function isDeadlineActive(
+  deadlineIso: string | null | undefined,
+  timeStr?: string | null,
+  referenceDate: Date = new Date()
+): boolean {
+  if (!deadlineIso) return false;
+  const deadlineDate = parseDateTime(deadlineIso, timeStr, 23, 59, 59);
+  if (!deadlineDate) return false;
+  return deadlineDate.getTime() >= referenceDate.getTime();
+}
+
 /** Calculate days difference between target date and reference date */
 export function getDaysDifference(targetIsoDate: string, referenceDate: Date = new Date()): number {
   const todayStr = getTodayISODate(referenceDate);
@@ -75,7 +218,7 @@ export function getUrgencyInfo(
       return {
         targetDate: event.registration_deadline,
         isDeadline: true,
-        daysRemaining: diff,
+        daysRemaining: Math.max(0, diff),
         label: `Deadline: ${formatDiffLabel(diff, true)}`,
         urgencyLevel: diff <= 1 ? 'critical' : diff <= 3 ? 'high' : 'medium',
       };
@@ -87,7 +230,7 @@ export function getUrgencyInfo(
         return {
           targetDate: event.event_start_date,
           isDeadline: false,
-          daysRemaining: eventDiff,
+          daysRemaining: Math.max(0, eventDiff),
           label: `Event: ${formatDiffLabel(eventDiff, false)}`,
           urgencyLevel: getUrgencyFromDiff(eventDiff),
         };
@@ -95,7 +238,7 @@ export function getUrgencyInfo(
       return {
         targetDate: event.event_start_date,
         isDeadline: false,
-        daysRemaining: eventDiff,
+        daysRemaining: 0,
         label: `Event ended (${Math.abs(eventDiff)}d ago)`,
         urgencyLevel: 'passed',
       };
@@ -103,7 +246,7 @@ export function getUrgencyInfo(
     return {
       targetDate: event.registration_deadline,
       isDeadline: true,
-      daysRemaining: diff,
+      daysRemaining: 0,
       label: `Deadline passed (${Math.abs(diff)}d ago)`,
       urgencyLevel: 'passed',
     };
@@ -115,7 +258,7 @@ export function getUrgencyInfo(
     return {
       targetDate: event.event_start_date,
       isDeadline: false,
-      daysRemaining: diff,
+      daysRemaining: Math.max(0, diff),
       label: diff >= 0 ? `Event: ${formatDiffLabel(diff, false)}` : `Event ended (${Math.abs(diff)}d ago)`,
       urgencyLevel: getUrgencyFromDiff(diff),
     };
@@ -131,11 +274,10 @@ export function getUrgencyInfo(
 }
 
 function formatDiffLabel(diff: number, isDeadline: boolean): string {
-  if (diff === 0) return isDeadline ? 'DEADLINE TODAY 🚨' : 'Happening Today';
+  if (diff <= 0) return isDeadline ? 'DEADLINE TODAY 🚨' : 'Happening Today';
   if (diff === 1) return isDeadline ? 'DEADLINE TOMORROW ⚠️' : 'Tomorrow';
   if (diff > 1) return `In ${diff} days`;
-  if (diff === -1) return 'Yesterday';
-  return `${Math.abs(diff)} days ago`;
+  return isDeadline ? 'Deadline Passed' : 'Event Passed';
 }
 
 function getUrgencyFromDiff(diff: number): 'critical' | 'high' | 'medium' | 'low' | 'passed' {
@@ -165,7 +307,7 @@ export function isEventThisWeek(
 /** Filter and sort events for "Upcoming This Week" backup dashboard */
 export function getEventsThisWeek(events: CalendarEvent[], referenceDate: Date = new Date()): CalendarEvent[] {
   return events
-    .filter((e) => e.status !== 'skipped' && isEventThisWeek(e, referenceDate))
+    .filter((e) => e.status !== 'skipped' && !isEventFinished(e, referenceDate) && isEventThisWeek(e, referenceDate))
     .sort((a, b) => {
       const aInfo = getUrgencyInfo(a, referenceDate);
       const bInfo = getUrgencyInfo(b, referenceDate);

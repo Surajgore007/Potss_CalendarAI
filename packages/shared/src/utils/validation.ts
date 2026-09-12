@@ -44,8 +44,12 @@ export function isValidDateFormat(dateStr: string | null | undefined): boolean {
 
 export function isValidTimeFormat(timeStr: string | null | undefined): boolean {
   if (!timeStr || typeof timeStr !== 'string') return false;
-  const regex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-  return regex.test(timeStr.trim());
+  const trimmed = timeStr.trim();
+  // 12-hour format: e.g. "6:00 PM", "10:30 AM", "12:00 pm", "9:45am"
+  const regex12 = /^(0?[1-9]|1[0-2]):([0-5]\d)\s*(AM|PM|am|pm)$/i;
+  // 24-hour format: e.g. "18:00", "09:30", "00:00"
+  const regex24 = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+  return regex12.test(trimmed) || regex24.test(trimmed);
 }
 
 export interface ValidationIssue {

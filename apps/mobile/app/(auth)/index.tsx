@@ -19,16 +19,21 @@ import {
   EVENT_TYPE_CONFIG,
   formatFriendlyDate,
   getDaysDifference,
+  isEventFinished,
+  isDeadlineActive,
 } from '@eventpulse/shared';
 import { requestNotificationPermissions } from '../../src/services/notificationService';
+import { NotificationCenterModal } from '../../src/components/NotificationCenterModal';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { events, clashes } = useEvents();
 
-  const [activeFeedTab, setActiveFeedTab] = useState<'upcoming' | 'deadlines'>('upcoming');
+  const [activeFeedTab, setActiveFeedTab] = useState<'upcoming' | 'deadlines' | 'history'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadAlertCount, setUnreadAlertCount] = useState(0);
 
   // Request Android runtime notification permissions immediately on dashboard mount
   React.useEffect(() => {
@@ -40,18 +45,15 @@ export default function DashboardScreen() {
     setTimeout(() => setRefreshing(false), 500);
   }, []);
 
-  // Compute active items
+  // Compute active non-skipped items
   const activeEvents = useMemo(() => {
     return events.filter((e) => e.status !== 'skipped');
   }, [events]);
 
+  // Upcoming events: must NOT be finished
   const upcomingList = useMemo(() => {
     return activeEvents
-      .filter((e) => {
-        const targetDate = e.event_start_date || e.registration_deadline;
-        if (!targetDate) return false;
-        return getDaysDifference(targetDate) >= 0;
-      })
+      .filter((e) => !isEventFinished(e))
       .sort((a, b) => {
         const aDate = a.event_start_date || a.registration_deadline || '';
         const bDate = b.event_start_date || b.registration_deadline || '';
@@ -59,10 +61,22 @@ export default function DashboardScreen() {
       });
   }, [activeEvents]);
 
+  // Deadlines: must NOT be finished and registration deadline must be active (today or in future)
   const deadlinesList = useMemo(() => {
     return activeEvents
-      .filter((e) => !!e.registration_deadline)
+      .filter((e) => !isEventFinished(e) && isDeadlineActive(e.registration_deadline, e.time))
       .sort((a, b) => (a.registration_deadline || '').localeCompare(b.registration_deadline || ''));
+  }, [activeEvents]);
+
+  // Completed / Finished events for History
+  const historyList = useMemo(() => {
+    return activeEvents
+      .filter((e) => isEventFinished(e))
+      .sort((a, b) => {
+        const aDate = a.event_end_date || a.event_start_date || a.registration_deadline || '';
+        const bDate = b.event_end_date || b.event_start_date || b.registration_deadline || '';
+        return bDate.localeCompare(aDate); // Most recently ended first
+      });
   }, [activeEvents]);
 
   const urgentDeadlinesCount = useMemo(() => {
@@ -110,6 +124,24 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.topActionsRow}>
+            {/* Notification Bell beside Extract */}
+            <TouchableOpacity
+              style={styles.notificationBellBtn}
+              onPress={() => setShowNotifications(true)}
+              activeOpacity={0.8}
+              accessibilityLabel="Notifications"
+            >
+              <Ionicons name="notifications-outline" size={17} color={colors.textPrimary} />
+              {unreadAlertCount > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadBadgeText}>
+                    {unreadAlertCount > 9 ? '9+' : unreadAlertCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* AI Extract Button */}
             <TouchableOpacity
               style={styles.extractBtn}
               onPress={() => router.push('/extract')}
@@ -119,6 +151,7 @@ export default function DashboardScreen() {
               <Text style={styles.extractBtnText}>Extract</Text>
             </TouchableOpacity>
 
+            {/* User Profile Avatar */}
             <TouchableOpacity
               style={styles.avatarBtn}
               onPress={() => router.push('/(auth)/settings')}
@@ -191,7 +224,7 @@ export default function DashboardScreen() {
                   const target = nextUp.event_start_date || nextUp.registration_deadline;
                   if (!target) return '';
                   const diff = getDaysDifference(target);
-                  if (diff === 0) return 'Today';
+                  if (diff <= 0) return 'Today';
                   if (diff === 1) return 'Tomorrow';
                   return `In ${diff} days`;
                 })()}
@@ -251,7 +284,7 @@ export default function DashboardScreen() {
           </GlassCard>
         )}
 
-        {/* Feed Section with 2-Tab Selector */}
+        {/* Feed Section with 3-Tab Selector: Upcoming | Deadlines | History */}
         <View style={styles.feedSection}>
           <View style={styles.feedTabRow}>
             <TouchableOpacity
@@ -289,6 +322,25 @@ export default function DashboardScreen() {
                 numberOfLines={1}
               >
                 Deadlines ({deadlinesList.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.feedTab,
+                activeFeedTab === 'history' && styles.feedTabActive,
+              ]}
+              onPress={() => setActiveFeedTab('history')}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.feedTabText,
+                  activeFeedTab === 'history' && styles.feedTabTextActive,
+                ]}
+                numberOfLines={1}
+              >
+                History ({historyList.length})
               </Text>
             </TouchableOpacity>
           </View>
@@ -345,7 +397,7 @@ export default function DashboardScreen() {
                 })}
               </View>
             )
-          ) : (
+          ) : activeFeedTab === 'deadlines' ? (
             deadlinesList.length === 0 ? (
               <View style={styles.emptyStateContainer}>
                 <Ionicons name="alarm-outline" size={24} color={colors.textSecondary} />
@@ -383,7 +435,7 @@ export default function DashboardScreen() {
                             ]}
                           >
                             {diff !== null
-                              ? diff === 0
+                              ? diff <= 0
                                 ? 'CLOSES TODAY'
                                 : diff === 1
                                 ? 'CLOSES TOMORROW'
@@ -402,9 +454,69 @@ export default function DashboardScreen() {
                 })}
               </View>
             )
+          ) : (
+            /* History Tab Content */
+            historyList.length === 0 ? (
+              <View style={styles.emptyStateContainer}>
+                <Ionicons name="time-outline" size={24} color={colors.textSecondary} />
+                <Text style={styles.emptyStateText}>No completed events in history yet</Text>
+              </View>
+            ) : (
+              <View style={styles.cardsList}>
+                {historyList.map((ev) => {
+                  const conf = EVENT_TYPE_CONFIG[ev.type] || EVENT_TYPE_CONFIG.other;
+                  const targetDate = ev.event_end_date || ev.event_start_date || ev.registration_deadline;
+                  const dayNum = targetDate ? targetDate.split('-')[2] : '--';
+                  const monthName = targetDate
+                    ? new Date(targetDate).toLocaleDateString('en-US', { month: 'short' })
+                    : '';
+
+                  return (
+                    <TouchableOpacity
+                      key={ev.id}
+                      style={[styles.listItemCard, styles.historyCard]}
+                      onPress={() => router.push(`/event/${ev.id}`)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.dateBadge, styles.historyDateBadge]}>
+                        <Text style={[styles.dateBadgeDay, styles.historyDateText]}>{dayNum}</Text>
+                        <Text style={[styles.dateBadgeMonth, styles.historyDateText]}>{monthName.toUpperCase()}</Text>
+                      </View>
+
+                      <View style={styles.listItemInfo}>
+                        <View style={styles.typeLabelRow}>
+                          <Text style={[styles.typeBadgeText, { color: colors.textSecondary }]}>
+                            {conf.label.toUpperCase()}
+                          </Text>
+                          {ev.status === 'registered' ? (
+                            <Text style={styles.historyCompletedBadge}>• COMPLETED</Text>
+                          ) : (
+                            <Text style={styles.historyEndedBadge}>• ENDED</Text>
+                          )}
+                        </View>
+                        <Text style={[styles.listItemTitle, styles.historyTitleText]} numberOfLines={1} ellipsizeMode="tail">
+                          {ev.title}
+                        </Text>
+                      </View>
+
+                      <Ionicons name="chevron-forward" size={16} color="#C7C7CC" />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )
           )}
         </View>
       </ScrollView>
+
+      {/* Notification Center Modal */}
+      <NotificationCenterModal
+        visible={showNotifications}
+        onClose={() => setShowNotifications(false)}
+        events={events}
+        clashes={clashes}
+        onUnreadCountChange={setUnreadAlertCount}
+      />
     </SafeAreaView>
   );
 }
@@ -458,6 +570,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flexShrink: 0,
+  },
+  notificationBellBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.pill,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    position: 'relative',
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: colors.primary,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  unreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+    lineHeight: 11,
   },
   extractBtn: {
     flexDirection: 'row',
@@ -748,5 +891,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     fontWeight: '500',
+  },
+  historyCard: {
+    opacity: 0.85,
+  },
+  historyDateBadge: {
+    backgroundColor: 'rgba(0, 0, 0, 0.03)',
+  },
+  historyDateText: {
+    color: colors.textSecondary,
+  },
+  historyCompletedBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.success,
+  },
+  historyEndedBadge: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textTertiary,
+  },
+  historyTitleText: {
+    color: colors.textPrimary,
   },
 });

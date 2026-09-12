@@ -22,7 +22,9 @@ import {
   EVENT_TYPE_CONFIG,
   subscribeToCommunityEvents,
   deleteCommunityEvent,
+  toggleCommunityEventAttendance,
   formatFriendlyDate,
+  formatTime12Hour,
   getDaysDifference,
 } from '@eventpulse/shared';
 import { colors, radii, shadows } from '../../src/theme/tokens';
@@ -36,6 +38,45 @@ export default function CollegeFeedScreen() {
   const [activeFilter, setActiveFilter] = useState<EventType | 'all'>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [attendingId, setAttendingId] = useState<string | null>(null);
+
+  // Extract 2-letter uppercase initials from user profile
+  const getUserInitials = (): string => {
+    if (!user?.displayName) return 'ST';
+    const parts = user.displayName.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return user.displayName.slice(0, 2).toUpperCase();
+  };
+
+  const isUserGoing = (commEvent: CommunityEvent): boolean => {
+    if (!user?.uid || !commEvent.attendees) return false;
+    return commEvent.attendees.includes(user.uid);
+  };
+
+  const handleToggleAttendance = async (commEvent: CommunityEvent) => {
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in to confirm attendance.');
+      return;
+    }
+    const currentlyGoing = isUserGoing(commEvent);
+    setAttendingId(commEvent.id);
+
+    try {
+      await toggleCommunityEventAttendance(
+        commEvent.id,
+        user.uid,
+        getUserInitials(),
+        !currentlyGoing
+      );
+    } catch (err: any) {
+      console.error('Error toggling attendance:', err);
+      Alert.alert('Notice', 'Could not update your attendance.');
+    } finally {
+      setAttendingId(null);
+    }
+  };
 
   // Subscribe to live SIES GST community events
   useEffect(() => {
@@ -256,7 +297,7 @@ export default function CollegeFeedScreen() {
                       <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
                       <Text style={styles.metaText} numberOfLines={1}>
                         Event: {formatFriendlyDate(item.event_start_date)}
-                        {item.time ? ` at ${item.time}` : ''}
+                        {item.time ? ` at ${formatTime12Hour(item.time)}` : ''}
                       </Text>
                     </View>
                   )}
@@ -285,19 +326,75 @@ export default function CollegeFeedScreen() {
                   )}
                 </View>
 
+                {/* Social Attendance Presence Row */}
+                {(() => {
+                  const goingCount = item.attendeesCount || 0;
+                  const userGoing = isUserGoing(item);
+                  const previews = Object.entries(item.attendeePreviews || {});
+                  const displayAvatars = previews.slice(0, 3);
+                  const remainingCount = goingCount > displayAvatars.length ? goingCount - displayAvatars.length : 0;
+
+                  return (
+                    <View style={styles.socialAttendanceRow}>
+                      <View style={styles.socialTextGroup}>
+                        <Ionicons name="people-outline" size={14} color={userGoing ? colors.success : colors.textSecondary} />
+                        <Text style={[styles.socialText, userGoing && styles.socialTextActive]}>
+                          {goingCount === 0
+                            ? 'Be first to confirm going'
+                            : userGoing
+                            ? `${goingCount} GSTians Going (You + ${goingCount - 1})`
+                            : `${goingCount} GSTian${goingCount > 1 ? 's' : ''} Going`}
+                        </Text>
+                      </View>
+
+                      {displayAvatars.length > 0 && (
+                        <View style={styles.avatarStack}>
+                          {displayAvatars.map(([uid, initials], idx) => (
+                            <View
+                              key={uid}
+                              style={[
+                                styles.avatarBubble,
+                                { zIndex: 10 - idx, marginLeft: idx > 0 ? -8 : 0 },
+                              ]}
+                            >
+                              <Text style={styles.avatarInitials}>{initials}</Text>
+                            </View>
+                          ))}
+                          {remainingCount > 0 && (
+                            <View style={[styles.avatarBubble, styles.avatarMoreBubble, { marginLeft: -8 }]}>
+                              <Text style={styles.avatarMoreText}>+{remainingCount}</Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()}
+
                 {/* Action Buttons */}
                 <View style={styles.cardActionsRow}>
-                  {item.registration_link && (
-                    <TouchableOpacity
-                      style={styles.linkButton}
-                      onPress={() => Linking.openURL(item.registration_link!)}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="open-outline" size={14} color={colors.textPrimary} />
-                      <Text style={styles.linkButtonText} numberOfLines={1}>Register Link</Text>
-                    </TouchableOpacity>
-                  )}
+                  {/* Public "I'm Going" Action */}
+                  <TouchableOpacity
+                    style={[styles.goingButton, isUserGoing(item) && styles.goingButtonActive]}
+                    onPress={() => handleToggleAttendance(item)}
+                    disabled={attendingId === item.id}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={isUserGoing(item) ? 'checkmark-circle-outline' : 'people-outline'}
+                      size={14}
+                      color={isUserGoing(item) ? colors.success : colors.textPrimary}
+                    />
+                    <Text style={[styles.goingButtonText, isUserGoing(item) && styles.goingButtonTextActive]}>
+                      {attendingId === item.id
+                        ? 'Updating...'
+                        : isUserGoing(item)
+                        ? 'Going'
+                        : "I'm Going"}
+                    </Text>
+                  </TouchableOpacity>
 
+                  {/* Private "Save to Calendar" Bookmark Action */}
                   <TouchableOpacity
                     style={[styles.saveButton, saved && styles.saveButtonDone]}
                     onPress={() => handleTogglePersonal(item)}
@@ -305,14 +402,24 @@ export default function CollegeFeedScreen() {
                     activeOpacity={0.85}
                   >
                     <Ionicons
-                      name={saved ? 'checkmark-circle' : 'add-circle-outline'}
-                      size={15}
-                      color={saved ? colors.success : '#FFFFFF'}
+                      name={saved ? 'bookmark' : 'bookmark-outline'}
+                      size={14}
+                      color={saved ? colors.primary : '#FFFFFF'}
                     />
                     <Text style={[styles.saveButtonText, saved && styles.saveButtonTextDone]}>
-                      {isSaving ? 'Updating...' : saved ? 'In Calendar' : 'Add to Calendar'}
+                      {isSaving ? 'Updating...' : saved ? 'Saved (Private)' : 'Save Event'}
                     </Text>
                   </TouchableOpacity>
+
+                  {item.registration_link && (
+                    <TouchableOpacity
+                      style={styles.linkButton}
+                      onPress={() => Linking.openURL(item.registration_link!)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="open-outline" size={14} color={colors.textPrimary} />
+                    </TouchableOpacity>
+                  )}
 
                   {isAdmin && (
                     <TouchableOpacity
@@ -321,7 +428,7 @@ export default function CollegeFeedScreen() {
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       activeOpacity={0.7}
                     >
-                      <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                      <Ionicons name="trash-outline" size={15} color={colors.danger} />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -565,12 +672,89 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
-  linkButton: {
+  socialAttendanceRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: radii.control,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  socialTextGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  socialText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  socialTextActive: {
+    color: colors.success,
+    fontWeight: '600',
+  },
+  avatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarBubble: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  avatarInitials: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  avatarMoreBubble: {
+    backgroundColor: '#F1F5F9',
+  },
+  avatarMoreText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  goingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 5,
     backgroundColor: colors.canvasSubtle,
     paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radii.control,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  goingButtonActive: {
+    backgroundColor: '#F0FDF4',
+    borderColor: 'rgba(22, 163, 74, 0.25)',
+  },
+  goingButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  goingButtonTextActive: {
+    color: colors.success,
+  },
+  linkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.canvasSubtle,
+    paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: radii.control,
     borderWidth: 1,
@@ -588,14 +772,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     backgroundColor: colors.primary,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: radii.control,
   },
   saveButtonDone: {
-    backgroundColor: colors.successLight,
+    backgroundColor: '#F4F4F5',
     borderWidth: 1,
-    borderColor: 'rgba(22, 163, 74, 0.2)',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
   },
   saveButtonText: {
     fontSize: 12,
@@ -603,7 +787,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   saveButtonTextDone: {
-    color: colors.success,
+    color: colors.textPrimary,
   },
   deleteAdminBtn: {
     padding: 8,

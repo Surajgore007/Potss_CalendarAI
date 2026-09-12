@@ -23,17 +23,19 @@ import {
   PublishDestination,
   validateEventForSave,
   batchPublishCommunityEvents,
+  broadcastCommunityPushNotification,
 } from '@eventpulse/shared';
 import { colors, radii, shadows } from '../../src/theme/tokens';
 
 export default function ConfirmScreen() {
   const router = useRouter();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, getIdToken } = useAuth();
   const { pendingExtractions, setPendingExtractions, addBatchEvents } = useEvents();
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [destination, setDestination] = useState<PublishDestination>('personal');
+  const [notifyStudents, setNotifyStudents] = useState<boolean>(true);
 
   const handleUpdateEvent = (index: number, updated: ExtractedEvent) => {
     setPendingExtractions((prev) => {
@@ -74,7 +76,39 @@ export default function ConfirmScreen() {
         await addBatchEvents([item]);
       }
       if (isAdmin && user && (destination === 'community' || destination === 'both')) {
-        await batchPublishCommunityEvents([item], user.uid, 'SIES_GST');
+        try {
+          const published = await batchPublishCommunityEvents([item], user.uid, 'SIES_GST');
+          if (notifyStudents && published.length > 0) {
+            try {
+              const token = await getIdToken();
+              const workerUrl =
+                process.env.EXPO_PUBLIC_WORKER_URL ||
+                process.env.EXPO_PUBLIC_API_URL ||
+                'https://eventpulse-api.surajgore.workers.dev';
+              if (token) {
+                await broadcastCommunityPushNotification(workerUrl, token, {
+                  eventId: published[0].id,
+                  title: item.title,
+                  body: `New ${item.type || 'event'} added to SIES GST feed!`,
+                  eventType: item.type,
+                });
+              }
+            } catch (pushErr) {
+              console.warn('Push broadcast notice:', pushErr);
+            }
+          }
+        } catch (commErr: any) {
+          console.error('Community publish failed:', commErr);
+          const isPermissionErr =
+            commErr?.code === 'permission-denied' ||
+            commErr?.message?.includes('permission');
+          Alert.alert(
+            isPermissionErr ? 'Admin Privileges Required' : 'Community Feed Notice',
+            isPermissionErr
+              ? 'Publishing to SIES GST Community Feed requires your Firestore account (/users/{uid}) to have role: "admin". Event was saved to your personal calendar.'
+              : `Could not publish to campus feed: ${commErr?.message || 'Please try again'}`
+          );
+        }
       }
 
       setPendingExtractions((prev) => {
@@ -86,7 +120,7 @@ export default function ConfirmScreen() {
       });
     } catch (err: any) {
       console.error('Save single event failed:', err);
-      setSaveError("We're getting things ready. Please check your connection and try again in a moment.");
+      setSaveError('Could not save event. Please check your connection and try again.');
     } finally {
       setIsSaving(false);
     }
@@ -114,14 +148,49 @@ export default function ConfirmScreen() {
         await addBatchEvents(pendingExtractions);
       }
       if (isAdmin && user && (destination === 'community' || destination === 'both')) {
-        await batchPublishCommunityEvents(pendingExtractions, user.uid, 'SIES_GST');
+        try {
+          const published = await batchPublishCommunityEvents(pendingExtractions, user.uid, 'SIES_GST');
+          if (notifyStudents && published.length > 0) {
+            try {
+              const token = await getIdToken();
+              const workerUrl =
+                process.env.EXPO_PUBLIC_WORKER_URL ||
+                process.env.EXPO_PUBLIC_API_URL ||
+                'https://eventpulse-api.surajgore.workers.dev';
+              if (token) {
+                const mainEvent = published[0];
+                const title =
+                  published.length > 1 ? `${published.length} New Events Added!` : mainEvent.title;
+                await broadcastCommunityPushNotification(workerUrl, token, {
+                  eventId: mainEvent.id,
+                  title,
+                  body: `New events added to SIES GST campus feed. Tap to view!`,
+                  eventType: mainEvent.type,
+                });
+              }
+            } catch (pushErr) {
+              console.warn('Push broadcast notice:', pushErr);
+            }
+          }
+        } catch (commErr: any) {
+          console.error('Batch community publish failed:', commErr);
+          const isPermissionErr =
+            commErr?.code === 'permission-denied' ||
+            commErr?.message?.includes('permission');
+          Alert.alert(
+            isPermissionErr ? 'Admin Privileges Required' : 'Community Feed Notice',
+            isPermissionErr
+              ? 'Publishing to SIES GST Community Feed requires your Firestore account (/users/{uid}) to have role: "admin". Events have been saved to your personal calendar.'
+              : `Could not publish to campus feed: ${commErr?.message || 'Please try again'}`
+          );
+        }
       }
 
       setPendingExtractions([]);
       router.replace((destination === 'community' ? '/(auth)/college' : '/(auth)') as any);
     } catch (err: any) {
       console.error('Save all events failed:', err);
-      setSaveError("We're getting things ready. Please check your connection and try again in a moment.");
+      setSaveError('Could not save events. Please check your connection and try again.');
     } finally {
       setIsSaving(false);
     }
@@ -206,6 +275,27 @@ export default function ConfirmScreen() {
                   );
                 })}
               </View>
+
+              {isAdmin && (destination === 'community' || destination === 'both') && (
+                <TouchableOpacity
+                  style={styles.notifyToggleRow}
+                  onPress={() => setNotifyStudents((prev) => !prev)}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.notifyToggleTextCol}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="megaphone-outline" size={15} color={colors.primary} />
+                      <Text style={styles.notifyToggleTitle}>Notify SIES GST Students</Text>
+                    </View>
+                    <Text style={styles.notifyToggleSubtitle}>
+                      Send instant push notification banner to student phones
+                    </Text>
+                  </View>
+                  <View style={[styles.checkboxCircle, notifyStudents && styles.checkboxCircleActive]}>
+                    {notifyStudents && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                  </View>
+                </TouchableOpacity>
+              )}
             </GlassCard>
           )}
 
@@ -403,5 +493,45 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.danger,
     fontWeight: '500',
+  },
+  notifyToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+    gap: 10,
+  },
+  notifyToggleTextCol: {
+    flex: 1,
+    gap: 2,
+  },
+  notifyToggleTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  notifyToggleSubtitle: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    lineHeight: 14,
+  },
+  checkboxCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 0, 0, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  checkboxCircleActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
 });

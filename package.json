@@ -19,12 +19,15 @@
     "mobile:web": "npm --workspace=apps/mobile run web",
     "build:shared": "npm --workspace=packages/shared run build",
     "postinstall": "npm --workspace=packages/shared run build && node scripts/patch-rn.js",
-    "typecheck": "npm --workspace=packages/shared run typecheck && npm --workspace=apps/mobile run typecheck"
+    "typecheck": "npm --workspace=packages/shared run typecheck && npm --workspace=apps/mobile run typecheck",
+    "test:rules": "node scripts/test_firestore_rules.mjs",
+    "test:rules:emulator": "firebase-tools emulators:exec --only firestore \"node scripts/test_firestore_rules.mjs\""
   },
   "devDependencies": {
     "@babel/plugin-transform-class-properties": "^7.29.7",
     "@babel/plugin-transform-private-methods": "^7.29.7",
     "@babel/plugin-transform-private-property-in-object": "^7.29.7",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/react": "~19.1.10",
     "@types/react-dom": "~19.1.10",
     "babel-preset-expo": "~54.0.10",

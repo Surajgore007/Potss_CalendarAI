@@ -18,6 +18,8 @@ import { TypeBadge } from '../../../src/components/TypeBadge';
 import { ConfidenceBadge } from '../../../src/components/ConfidenceBadge';
 import { useEvents } from '../../../src/context/EventsContext';
 import { colors, radii, shadows } from '../../../src/theme/tokens';
+import { DatePickerModal } from '../../../src/components/ui/DatePickerModal';
+import { TimePickerModal } from '../../../src/components/ui/TimePickerModal';
 import {
   CalendarEvent,
   EventType,
@@ -27,6 +29,7 @@ import {
   EVENT_MODE_CONFIG,
   EVENT_STATUS_CONFIG,
   formatFriendlyDate,
+  formatTime12Hour,
   getUrgencyInfo,
   THEME_DESIGN,
   validateEventForSave,
@@ -41,22 +44,47 @@ const STATUSES: EventStatus[] = ['upcoming', 'registered', 'skipped'];
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { getEvent, editEvent, removeEvent } = useEvents();
+  const { events, editEvent, removeEvent } = useEvents();
 
-  const event = getEvent(id as string);
+  const currentEvent = events.find((e) => e.id === id);
+
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeDatePicker, setActiveDatePicker] = useState<{
+    field: 'registration_deadline' | 'event_start_date' | 'event_end_date';
+    title: string;
+  } | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [showRawText, setShowRawText] = useState(false);
 
-  const [formData, setFormData] = useState<CalendarEvent | null>(null);
+  const [formData, setFormData] = useState<CalendarEvent>({
+    id: id || '',
+    title: '',
+    type: 'other',
+    event_start_date: null,
+    event_end_date: null,
+    registration_deadline: null,
+    time: null,
+    mode: 'online',
+    location: null,
+    registration_link: null,
+    source_group: null,
+    raw_text: '',
+    confidence_score: 1.0,
+    tags: [],
+    reminder_offsets: [4320, 1440, 0],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    status: 'upcoming',
+  });
 
   useEffect(() => {
-    if (event) {
-      setFormData(event);
+    if (currentEvent) {
+      setFormData({ ...currentEvent });
     }
-  }, [event]);
+  }, [currentEvent]);
 
-  if (!event || !formData) {
+  if (!currentEvent && !formData.title) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <Header title="Event Details" showBack />
@@ -64,34 +92,24 @@ export default function EventDetailScreen() {
           <Ionicons name="alert-circle-outline" size={48} color="#94A3B8" />
           <Text style={styles.emptyTitle}>Event not found</Text>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backBtnText}>Go Back</Text>
+            <Text style={styles.backBtnText}>Back to Calendar</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  const urgency = getUrgencyInfo(formData);
-  const modeConfig = EVENT_MODE_CONFIG[formData.mode] || EVENT_MODE_CONFIG.online;
-
   const handleFieldChange = (field: keyof CalendarEvent, value: any) => {
-    setFormData((prev) => (prev ? { ...prev, [field]: value } : null));
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSave = async () => {
-    if (!formData) return;
-    const issues = validateEventForSave(formData);
-    const errors = issues.filter((issue) => issue.severity === 'error');
-    if (errors.length > 0) {
-      Alert.alert('Check event details', errors.map((issue) => issue.message).join('\n'));
+    if (!formData.title.trim()) {
+      Alert.alert('Validation Error', 'Event title is required.');
       return;
     }
     if (formData.time && !isValidTimeFormat(formData.time)) {
-      Alert.alert('Check event details', 'Time must use 24-hour HH:MM format.');
-      return;
-    }
-    if (formData.event_end_date && formData.event_start_date && formData.event_end_date < formData.event_start_date) {
-      Alert.alert('Check event details', 'End date cannot be before the start date.');
+      Alert.alert('Validation Error', 'Time must be in format "6:00 PM" or "18:00".');
       return;
     }
     setIsSaving(true);
@@ -99,16 +117,18 @@ export default function EventDetailScreen() {
       await editEvent(formData.id, {
         title: formData.title.trim(),
         type: formData.type,
-        event_start_date: formData.event_start_date,
-        event_end_date: formData.event_end_date,
-        registration_deadline: formData.registration_deadline,
-        time: formData.time,
+        event_start_date: formData.event_start_date || null,
+        event_end_date: formData.event_end_date || null,
+        registration_deadline: formData.registration_deadline || null,
+        time: formData.time ? formatTime12Hour(formData.time) : null,
         mode: formData.mode,
-        location: formData.location?.trim() || null,
-        registration_link: sanitizeUrl(formData.registration_link),
-        source_group: formData.source_group?.trim() || null,
+        location: formData.location ? formData.location.trim() : null,
+        registration_link: formData.registration_link ? sanitizeUrl(formData.registration_link) : null,
+        source_group: formData.source_group ? formData.source_group.trim() : null,
+        status: formData.status,
       });
       setIsEditing(false);
+      Alert.alert('Success', 'Event updated successfully.');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to update event.');
     } finally {
@@ -134,6 +154,9 @@ export default function EventDetailScreen() {
     handleFieldChange('status', status);
     await editEvent(formData.id, { status });
   };
+
+  const urgency = getUrgencyInfo(formData);
+  const modeConfig = EVENT_MODE_CONFIG[formData.mode] || EVENT_MODE_CONFIG.online;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -165,7 +188,6 @@ export default function EventDetailScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        {/* Status Selector Switcher */}
         <View style={styles.statusSection}>
           <Text style={styles.sectionLabel}>CALENDAR STATUS</Text>
           <View style={styles.segmentedContainer}>
@@ -180,20 +202,14 @@ export default function EventDetailScreen() {
                     selected && styles.segmentTabActive,
                   ]}
                   onPress={() => handleStatusChange(st)}
-                  activeOpacity={0.75}
                 >
                   <Ionicons
                     name={config.icon as any}
                     size={13}
                     color={selected ? config.color : colors.textTertiary}
+                    style={{ marginRight: 4 }}
                   />
-                  <Text
-                    style={[
-                      styles.segmentTabText,
-                      selected && { color: config.color, fontWeight: '700' },
-                    ]}
-                    numberOfLines={1}
-                  >
+                  <Text style={[styles.segmentTabText, selected && { color: config.color, fontWeight: '700' }]}>
                     {config.label}
                   </Text>
                 </TouchableOpacity>
@@ -203,83 +219,171 @@ export default function EventDetailScreen() {
         </View>
 
         {isEditing ? (
-          /* EDIT FORM */
           <View style={styles.editCard}>
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>TITLE</Text>
+              <Text style={styles.fieldLabel}>EVENT TITLE *</Text>
               <TextInput
                 style={styles.textInput}
                 value={formData.title}
                 onChangeText={(t) => handleFieldChange('title', t)}
-                maxLength={200}
+                placeholder="Event title..."
+                placeholderTextColor="#94A3B8"
+                maxLength={300}
               />
             </View>
 
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>CATEGORY</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-                {EVENT_TYPES.map((t) => (
-                  <TouchableOpacity
-                    key={t}
-                    style={[styles.chip, formData.type === t && styles.chipSelected]}
-                    onPress={() => handleFieldChange('type', t)}
-                  >
-                    <Text style={[styles.chipText, formData.type === t && styles.chipTextSelected]}>
-                      {EVENT_TYPE_CONFIG[t].label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {EVENT_TYPES.map((t) => {
+                  const conf = EVENT_TYPE_CONFIG[t];
+                  const isSel = formData.type === t;
+                  return (
+                    <TouchableOpacity
+                      key={t}
+                      style={[styles.chip, isSel && { backgroundColor: conf.badgeBg, borderColor: conf.badgeText }]}
+                      onPress={() => handleFieldChange('type', t)}
+                    >
+                      <Ionicons
+                        name={conf.icon as any}
+                        size={12}
+                        color={isSel ? conf.badgeText : '#64748B'}
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text style={[styles.chipText, isSel && { color: conf.badgeText, fontWeight: '700' }]}>
+                        {conf.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </View>
 
+            {/* Mode selector */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>FORMAT</Text>
+              <View style={styles.chipRow}>
+                {EVENT_MODES.map((m) => {
+                  const conf = EVENT_MODE_CONFIG[m];
+                  const isSel = formData.mode === m;
+                  return (
+                    <TouchableOpacity
+                      key={m}
+                      style={[styles.chip, isSel && { backgroundColor: conf.badgeBg, borderColor: conf.badgeText }]}
+                      onPress={() => handleFieldChange('mode', m)}
+                    >
+                      <Ionicons
+                        name={conf.icon as any}
+                        size={12}
+                        color={isSel ? conf.badgeText : '#64748B'}
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text style={[styles.chipText, isSel && { color: conf.badgeText, fontWeight: '700' }]}>
+                        {conf.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Date and Time Fields with Interactive Pickers */}
             <View style={styles.rowTwoCols}>
               <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text style={styles.fieldLabel}>REG. DEADLINE (YYYY-MM-DD)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formData.registration_deadline || ''}
-                  onChangeText={(t) => handleFieldChange('registration_deadline', t || null)}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#94A3B8"
-                  maxLength={10}
-                />
+                <Text style={styles.fieldLabel}>REG. DEADLINE</Text>
+                <View style={styles.inputWithIconRow}>
+                  <TextInput
+                    style={[styles.textInput, { flex: 1 }]}
+                    value={formData.registration_deadline || ''}
+                    onChangeText={(t) => handleFieldChange('registration_deadline', t || null)}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#94A3B8"
+                    maxLength={10}
+                  />
+                  <TouchableOpacity
+                    style={styles.inputIconBtn}
+                    onPress={() =>
+                      setActiveDatePicker({
+                        field: 'registration_deadline',
+                        title: 'Registration Deadline',
+                      })
+                    }
+                  >
+                    <Ionicons name="calendar-outline" size={17} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text style={styles.fieldLabel}>EVENT START (YYYY-MM-DD)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formData.event_start_date || ''}
-                  onChangeText={(t) => handleFieldChange('event_start_date', t || null)}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#94A3B8"
-                  maxLength={10}
-                />
+                <Text style={styles.fieldLabel}>EVENT START</Text>
+                <View style={styles.inputWithIconRow}>
+                  <TextInput
+                    style={[styles.textInput, { flex: 1 }]}
+                    value={formData.event_start_date || ''}
+                    onChangeText={(t) => handleFieldChange('event_start_date', t || null)}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#94A3B8"
+                    maxLength={10}
+                  />
+                  <TouchableOpacity
+                    style={styles.inputIconBtn}
+                    onPress={() =>
+                      setActiveDatePicker({
+                        field: 'event_start_date',
+                        title: 'Event Start Date',
+                      })
+                    }
+                  >
+                    <Ionicons name="calendar-outline" size={17} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
             <View style={styles.rowTwoCols}>
               <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text style={styles.fieldLabel}>END DATE (YYYY-MM-DD)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formData.event_end_date || ''}
-                  onChangeText={(t) => handleFieldChange('event_end_date', t || null)}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#94A3B8"
-                  maxLength={10}
-                />
+                <Text style={styles.fieldLabel}>END DATE</Text>
+                <View style={styles.inputWithIconRow}>
+                  <TextInput
+                    style={[styles.textInput, { flex: 1 }]}
+                    value={formData.event_end_date || ''}
+                    onChangeText={(t) => handleFieldChange('event_end_date', t || null)}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#94A3B8"
+                    maxLength={10}
+                  />
+                  <TouchableOpacity
+                    style={styles.inputIconBtn}
+                    onPress={() =>
+                      setActiveDatePicker({
+                        field: 'event_end_date',
+                        title: 'Event End Date',
+                      })
+                    }
+                  >
+                    <Ionicons name="calendar-outline" size={17} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
               </View>
+
               <View style={[styles.fieldGroup, { flex: 1 }]}>
-                <Text style={styles.fieldLabel}>TIME (24H)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={formData.time || ''}
-                  onChangeText={(t) => handleFieldChange('time', t || null)}
-                  placeholder="10:00"
-                  placeholderTextColor="#94A3B8"
-                  maxLength={5}
-                />
+                <Text style={styles.fieldLabel}>TIME (12-HOUR)</Text>
+                <View style={styles.inputWithIconRow}>
+                  <TextInput
+                    style={[styles.textInput, { flex: 1 }]}
+                    value={formData.time ? formatTime12Hour(formData.time) : ''}
+                    onChangeText={(t) => handleFieldChange('time', t || null)}
+                    placeholder="10:00 AM"
+                    placeholderTextColor="#94A3B8"
+                    maxLength={12}
+                  />
+                  <TouchableOpacity
+                    style={styles.inputIconBtn}
+                    onPress={() => setShowTimePicker(true)}
+                  >
+                    <Ionicons name="time-outline" size={17} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
@@ -346,7 +450,7 @@ export default function EventDetailScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.dateSub}>REGISTRATION DEADLINE</Text>
                     <Text style={styles.deadlineVal}>{formatFriendlyDate(formData.registration_deadline)}</Text>
-                    {formData.time && <Text style={styles.timeVal}>Time: {formData.time}</Text>}
+                    {formData.time && <Text style={styles.timeVal}>Time: {formatTime12Hour(formData.time)}</Text>}
                   </View>
                 </View>
               )}
@@ -361,6 +465,7 @@ export default function EventDetailScreen() {
                     <Text style={styles.dateVal}>
                       {formatFriendlyDate(formData.event_start_date)}
                       {formData.event_end_date ? ` - ${formatFriendlyDate(formData.event_end_date)}` : ''}
+                      {formData.time && !formData.registration_deadline ? ` • ${formatTime12Hour(formData.time)}` : ''}
                     </Text>
                   </View>
                 </View>
@@ -413,6 +518,28 @@ export default function EventDetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Date Picker Modal */}
+      <DatePickerModal
+        visible={activeDatePicker !== null}
+        title={activeDatePicker?.title || 'Select Date'}
+        initialDate={activeDatePicker ? (formData[activeDatePicker.field] as string | null) : null}
+        onSelect={(dateStr) => {
+          if (activeDatePicker) {
+            handleFieldChange(activeDatePicker.field, dateStr);
+          }
+        }}
+        onClose={() => setActiveDatePicker(null)}
+      />
+
+      {/* Time Picker Modal (12-Hour Clock) */}
+      <TimePickerModal
+        visible={showTimePicker}
+        title="Select Event Time"
+        initialTime={formData.time}
+        onSelect={(timeStr) => handleFieldChange('time', timeStr)}
+        onClose={() => setShowTimePicker(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -525,6 +652,24 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 13,
     color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  inputWithIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.canvasSubtle,
+    borderRadius: radii.control,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    paddingRight: 6,
+  },
+  inputIconBtn: {
+    padding: 7,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.glassBorder,
   },

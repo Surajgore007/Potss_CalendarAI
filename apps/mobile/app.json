@@ -13,12 +13,18 @@
       "resizeMode": "contain",
       "backgroundColor": "#FAFAFA"
     },
+    "notification": {
+      "icon": "./assets/notification-icon.png",
+      "color": "#18181B",
+      "androidMode": "default"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.suraj.eventpulse"
     },
     "android": {
       "package": "com.suraj.eventpulse",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon/vanko-adaptive-foreground.png",
         "backgroundColor": "#FAFAFA"

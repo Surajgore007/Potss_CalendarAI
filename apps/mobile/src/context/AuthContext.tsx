@@ -19,8 +19,10 @@ import {
   signOut,
   User as FirebaseUser,
   Auth,
-} from '@firebase/auth';
+} from 'firebase/auth';
 import { UserProfile, UserRole, initFirebase, trackUserRegistration, fetchUserRole } from '@eventpulse/shared';
+import { isOnline } from '../services/networkService';
+import { registerForPushNotificationsAsync, unregisterPushTokenAsync } from '../services/pushNotificationService';
 
 let cachedAuth: Auth | null = null;
 function getAppAuth(app: any): Auth {
@@ -110,10 +112,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { app } = initFirebase();
       const auth = getAppAuth(app);
 
-      unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
         if (fbUser) {
           setFirebaseUser(fbUser);
-          const userRole = await fetchUserRole(fbUser.uid);
+          let userRole: UserRole = 'student';
+          try {
+            const online = await isOnline();
+            if (online) {
+              userRole = await fetchUserRole(fbUser.uid);
+            } else if (user?.role) {
+              userRole = user.role;
+            }
+          } catch {
+            userRole = user?.role || 'student';
+          }
+
           const profile: UserProfile = {
             uid: fbUser.uid,
             email: fbUser.email || '',
@@ -125,11 +138,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(profile);
           await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
           trackUserRegistration(fbUser.uid).catch(() => {});
+          registerForPushNotificationsAsync(fbUser.uid, 'SIES_GST').catch(() => {});
         } else {
-          // Explicitly clear session state when Firebase Auth is logged out
-          setFirebaseUser(null);
-          setUser(null);
-          await AsyncStorage.removeItem(AUTH_STORAGE_KEY).catch(() => {});
+          // Check if online before clearing session
+          const online = await isOnline();
+          if (online) {
+            // Online: genuine session expiry or revocation from Firebase Auth
+            setFirebaseUser(null);
+            setUser(null);
+            await AsyncStorage.removeItem(AUTH_STORAGE_KEY).catch(() => {});
+          } else {
+            // Offline: preserve the local cached session from AUTH_STORAGE_KEY!
+            // Do NOT wipe the user session while offline.
+          }
         }
         setIsLoading(false);
       });
@@ -333,6 +354,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       try {
+        if (user?.uid) {
+          await unregisterPushTokenAsync(user.uid);
+        }
         const { app } = initFirebase();
         const auth = getAppAuth(app);
         await signOut(auth);
