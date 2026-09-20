@@ -29,7 +29,7 @@ export async function getGoogleFirestoreAccessToken(env: Env): Promise<string> {
     iss: env.FIREBASE_CLIENT_EMAIL,
     sub: env.FIREBASE_CLIENT_EMAIL,
     aud: 'https://oauth2.googleapis.com/token',
-    scope: 'https://www.googleapis.com/auth/datastore',
+    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/identitytoolkit https://www.googleapis.com/auth/devstorage.read_write',
   })
     .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
     .setIssuedAt(now)

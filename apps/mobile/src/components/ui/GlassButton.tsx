@@ -114,15 +114,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    maxWidth: '100%',
   },
   iconWrap: {
     marginRight: 8,
+    flexShrink: 0,
   },
   baseText: {
     color: colors.textPrimary,
     fontSize: 15,
     fontWeight: '600',
     lineHeight: 20,
+    flexShrink: 1,
   },
   primaryText: {
     color: '#FFFFFF',

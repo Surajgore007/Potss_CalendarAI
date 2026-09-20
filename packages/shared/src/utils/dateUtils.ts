@@ -24,10 +24,39 @@ export function getNextMondayISODate(referenceDate: Date = new Date()): string {
   return getTodayISODate(d);
 }
 
+/**
+ * Normalizes any date string (including ISO-8601 strings like "2026-09-20T10:00:00.000Z" or "2026-09-20 10:00:00")
+ * to strict YYYY-MM-DD format. Returns null if string cannot be converted to a valid date.
+ */
+export function normalizeDateString(dateStr: string | null | undefined): string | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const trimmed = dateStr.trim();
+  if (!trimmed) return null;
+
+  // If already starts with YYYY-MM-DD
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+
+  // Fallback: try parsing through Date constructor
+  const d = new Date(trimmed);
+  if (!isNaN(d.getTime())) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  return null;
+}
+
 /** Format ISO date (YYYY-MM-DD) to friendly string like "Aug 25, 2026" or "Tue, Aug 25" */
 export function formatFriendlyDate(isoDate: string | null | undefined, includeDayOfWeek = true): string {
   if (!isoDate) return 'No date specified';
-  const parts = isoDate.split('-');
+  const cleanDate = normalizeDateString(isoDate);
+  if (!cleanDate) return isoDate;
+  const parts = cleanDate.split('-');
   if (parts.length !== 3) return isoDate;
   
   const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
@@ -86,8 +115,9 @@ export function parseDateTime(
   defaultMinute = 59,
   defaultSecond = 59
 ): Date | null {
-  if (!dateStr || typeof dateStr !== 'string') return null;
-  const parts = dateStr.split('-');
+  const cleanDate = normalizeDateString(dateStr);
+  if (!cleanDate) return null;
+  const parts = cleanDate.split('-');
   if (parts.length !== 3) return null;
   const [year, month, day] = parts.map(Number);
   if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
@@ -188,9 +218,12 @@ export function isDeadlineActive(
 /** Calculate days difference between target date and reference date */
 export function getDaysDifference(targetIsoDate: string, referenceDate: Date = new Date()): number {
   const todayStr = getTodayISODate(referenceDate);
-  if (targetIsoDate === todayStr) return 0;
+  const cleanTarget = normalizeDateString(targetIsoDate) || targetIsoDate;
+  if (cleanTarget === todayStr) return 0;
 
-  const [tY, tM, tD] = targetIsoDate.split('-').map(Number);
+  const parts = cleanTarget.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return 0;
+  const [tY, tM, tD] = parts;
   const [rY, rM, rD] = todayStr.split('-').map(Number);
 
   const target = new Date(tY, tM - 1, tD);
@@ -315,10 +348,11 @@ export function getEventsThisWeek(events: CalendarEvent[], referenceDate: Date =
     });
 }
 
-/** Detect clashes across all events (only event date collisions / overlapping event dates) */
-export function detectClashes(events: CalendarEvent[]): ClashDetail[] {
+/** Detect clashes across active events (only event date collisions / overlapping event dates for upcoming/active events) */
+export function detectClashes(events: CalendarEvent[], referenceDate: Date = new Date()): ClashDetail[] {
   const clashes: ClashDetail[] = [];
-  const activeEvents = events.filter((e) => e.status !== 'skipped');
+  // Only detect clashes for events that are NOT skipped and NOT finished (past)
+  const activeEvents = events.filter((e) => e.status !== 'skipped' && !isEventFinished(e, referenceDate));
 
   for (let i = 0; i < activeEvents.length; i++) {
     for (let j = i + 1; j < activeEvents.length; j++) {

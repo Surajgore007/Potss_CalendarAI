@@ -34,3 +34,23 @@ if (typeof (globalThis as any).performance === 'undefined') {
     (global as any).performance = (globalThis as any).performance;
   }
 }
+
+// Defensive fallback for expo-modules-core before native JSI attaches
+if (typeof (globalThis as any).expo === 'undefined') {
+  class FallbackEventEmitter {
+    addListener() { return { remove: () => {} }; }
+    removeListener() {}
+    removeAllListeners() {}
+    emit() {}
+  }
+  (globalThis as any).expo = {
+    EventEmitter: FallbackEventEmitter,
+    NativeModule: class NativeModule {},
+    SharedObject: class SharedObject {},
+    SharedRef: class SharedRef {},
+    modules: {},
+  };
+  if (typeof (global as any) !== 'undefined') {
+    (global as any).expo = (globalThis as any).expo;
+  }
+}

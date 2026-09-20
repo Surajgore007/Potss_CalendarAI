@@ -15,10 +15,20 @@ import {
   getEventsThisWeek,
   generateEventId,
   isEventFinished,
+  normalizeDateString,
 } from '@eventpulse/shared';
 import { useAuth } from './AuthContext';
-import { syncAllEventNotifications, remapNotificationIds } from '../services/notificationService';
+import { syncAllEventNotifications, cancelEventNotifications, remapNotificationIds } from '../services/notificationService';
 import { isOnline, subscribeToNetworkStatus } from '../services/networkService';
+
+function normalizeEventData(e: CalendarEvent): CalendarEvent {
+  return {
+    ...e,
+    event_start_date: normalizeDateString(e.event_start_date) || e.event_start_date || null,
+    event_end_date: normalizeDateString(e.event_end_date) || e.event_end_date || null,
+    registration_deadline: normalizeDateString(e.registration_deadline) || e.registration_deadline || null,
+  };
+}
 
 const EVENTS_CACHE_PREFIX = '@eventpulse_cached_events_';
 const EVENTS_CACHE_LATEST = '@vanko_cached_events_latest';
@@ -56,12 +66,23 @@ interface EventsContextType {
 const EventsContext = createContext<EventsContextType | undefined>(undefined);
 
 export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, firebaseUser } = useAuth();
+  const { user, firebaseUser, isLoading: authLoading } = useAuth();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [pendingWrites, setPendingWrites] = useState<PendingWrite[]>([]);
   const [pendingExtractions, setPendingExtractions] = useState<ExtractedEvent[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastRefreshTick, setLastRefreshTick] = useState<number>(Date.now());
+
+  // Track hydration status to prevent wiping alarms before local storage is read
+  const isHydratedRef = useRef(false);
+  const eventsRef = useRef<CalendarEvent[]>(events);
+  eventsRef.current = events;
+  const pendingWritesRef = useRef<PendingWrite[]>(pendingWrites);
+  pendingWritesRef.current = pendingWrites;
+
+  const userRef = useRef(user);
+  userRef.current = user;
 
   const isDrainingRef = useRef(false);
   const drainTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,7 +96,9 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           try {
             const parsed = JSON.parse(stored);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              setEvents(parsed);
+              const normalized = parsed.map(normalizeEventData);
+              setEvents(normalized);
+              isHydratedRef.current = true;
               setIsLoading(false);
             }
           } catch {
@@ -86,21 +109,29 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       .catch(() => {});
   }, []);
 
-  // Sync notifications whenever active events change
+  // Sync notifications whenever active events change — ONLY AFTER HYDRATION IS COMPLETE!
   useEffect(() => {
-    syncAllEventNotifications(events).catch(() => {});
-  }, [events]);
+    // CRITICAL: Never wipe or sync notifications before local cache has hydrated or while auth is loading!
+    if (!isHydratedRef.current || authLoading || !user) return;
 
-  const saveToStorage = async (updatedList: CalendarEvent[]) => {
+    // Skip no-op sync if events array is empty to prevent false-alarm warnings while preserving existing OS alarms
+    if (events.length === 0) return;
+
+    syncAllEventNotifications(events).catch(() => {});
+  }, [events, authLoading, user]);
+
+  const saveToStorage = useCallback(async (updatedList: CalendarEvent[]) => {
     try {
-      await AsyncStorage.setItem(EVENTS_CACHE_LATEST, JSON.stringify(updatedList));
-      if (user) {
-        await AsyncStorage.setItem(`${EVENTS_CACHE_PREFIX}${user.uid}`, JSON.stringify(updatedList));
+      const normalized = updatedList.map(normalizeEventData);
+      await AsyncStorage.setItem(EVENTS_CACHE_LATEST, JSON.stringify(normalized));
+      const currentUser = userRef.current;
+      if (currentUser?.uid) {
+        await AsyncStorage.setItem(`${EVENTS_CACHE_PREFIX}${currentUser.uid}`, JSON.stringify(normalized));
       }
-    } catch {
-      // Ignored
+    } catch (err) {
+      console.warn('Failed to save events to local device storage:', err);
     }
-  };
+  }, []);
 
   const savePendingWritesToStorage = async (queue: PendingWrite[]) => {
     if (!user) return;
@@ -220,10 +251,14 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Load user events & pending writes, listen to Firestore and network changes
   useEffect(() => {
+    // 1. While auth is loading from device storage, do NOT clear state or cancel alarms!
+    if (authLoading) return;
+
+    // 2. Genuine logged-out state (auth completed loading and user is null)
     if (!user) {
       setEvents([]);
       setPendingWrites([]);
-      syncAllEventNotifications([]).catch(() => {});
+      isHydratedRef.current = true;
       setIsLoading(false);
       return;
     }
@@ -231,19 +266,46 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const cacheKey = `${EVENTS_CACHE_PREFIX}${user.uid}`;
     const queueKey = `${PENDING_WRITES_PREFIX}${user.uid}`;
 
-    // 1. Hydrate user-specific cache and pending outbox queue
-    AsyncStorage.multiGet([cacheKey, queueKey])
-      .then(([cachedEventsRes, queueRes]) => {
+    // 3. Hydrate user-specific cache and pending outbox queue
+    AsyncStorage.multiGet([cacheKey, queueKey, EVENTS_CACHE_LATEST])
+      .then(([cachedEventsRes, queueRes, latestEventsRes]) => {
+        let loadedEvents: CalendarEvent[] | null = null;
+
         if (cachedEventsRes[1]) {
           try {
             const parsed = JSON.parse(cachedEventsRes[1]);
-            if (Array.isArray(parsed)) {
-              setEvents(parsed);
-              setIsLoading(false);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              loadedEvents = parsed.map((e) => normalizeEventData({ ...e, userId: e.userId || user.uid }));
             }
           } catch {
             // Ignored
           }
+        }
+
+        // Fallback to EVENTS_CACHE_LATEST if user cache was not yet populated or empty
+        if ((!loadedEvents || loadedEvents.length === 0) && latestEventsRes[1]) {
+          try {
+            const parsed = JSON.parse(latestEventsRes[1]);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              // Prefer events matching current user, otherwise adopt available device events
+              const userMatches = parsed.filter((e) => !e.userId || e.userId === user.uid);
+              const candidates = userMatches.length > 0 ? userMatches : parsed;
+              loadedEvents = candidates.map((e) => normalizeEventData({ ...e, userId: user.uid }));
+              // Backfill user-specific cache key for future cold starts
+              AsyncStorage.setItem(cacheKey, JSON.stringify(loadedEvents)).catch(() => {});
+            }
+          } catch {
+            // Ignored
+          }
+        }
+
+        // Apply loaded events if found; otherwise KEEP existing Frame-0 loaded events!
+        if (loadedEvents && loadedEvents.length > 0) {
+          setEvents(loadedEvents);
+          saveToStorage(loadedEvents).catch(() => {});
+        } else if (eventsRef.current.length > 0) {
+          // Preserve Frame 0 in-memory events and backfill to user cache
+          AsyncStorage.setItem(cacheKey, JSON.stringify(eventsRef.current)).catch(() => {});
         }
 
         if (queueRes[1]) {
@@ -256,29 +318,64 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             // Ignored
           }
         }
-      })
-      .catch(() => {});
 
-    // 2. Setup Firestore real-time listener if authenticated
+        isHydratedRef.current = true;
+        setIsLoading(false);
+      })
+      .catch(() => {
+        isHydratedRef.current = true;
+        setIsLoading(false);
+      });
+
+    // 4. Setup Firestore real-time listener if authenticated
     let unsubscribeFirestore = () => {};
     if (firebaseUser && firebaseUser.uid === user.uid) {
       try {
         unsubscribeFirestore = subscribeToUserEvents(
           firebaseUser.uid,
-          async (fetchedEvents) => {
-            // Merge with any un-drained local additions so they aren't prematurely overwritten
-            setEvents((currentEvents) => {
-              const fetchedMap = new Map(fetchedEvents.map((e) => [e.id, e]));
-              // Keep any events currently in local state that are still in the pending add queue
-              const merged = [...fetchedEvents];
-              for (const e of currentEvents) {
-                if (!fetchedMap.has(e.id) && pendingWrites.some((w) => w.eventId === e.id && w.action === 'add')) {
-                  merged.push(e);
-                }
+          async (fetchedEvents, fromCache) => {
+            const currentEvents = eventsRef.current;
+            const currentPending = pendingWritesRef.current;
+
+            // CRITICAL OFFLINE / CACHE SHIELD:
+            // When offline or on cold start, Firestore Web SDK's local cache may be empty.
+            // NEVER wipe local device events with an empty cache snapshot or when offline!
+            const online = await isOnline();
+            if (fetchedEvents.length === 0) {
+              if (fromCache || !online) {
+                // Ignore empty offline/cache snapshot — preserve local state & disk cache!
+                setIsLoading(false);
+                return;
               }
-              saveToStorage(merged).catch(() => {});
-              return merged;
-            });
+
+              // If genuinely online and server confirmed 0 events:
+              // Preserve any un-drained local additions so offline writes are never lost
+              const pendingAdds = currentEvents.filter((e) =>
+                currentPending.some((w) => w.eventId === e.id && w.action === 'add')
+              );
+              setEvents(pendingAdds);
+              saveToStorage(pendingAdds).catch(() => {});
+              isHydratedRef.current = true;
+              setIsLoading(false);
+              return;
+            }
+
+            // Normalise all dates on fetched events
+            const normalizedFetched = fetchedEvents.map(normalizeEventData);
+            const fetchedMap = new Map(normalizedFetched.map((e) => [e.id, e]));
+
+            // Merge with any un-drained local additions so they aren't prematurely overwritten
+            const merged = [...normalizedFetched];
+            for (const e of currentEvents) {
+              if (!fetchedMap.has(e.id) && currentPending.some((w) => w.eventId === e.id && w.action === 'add')) {
+                merged.push(e);
+              }
+            }
+
+            // Pure React state transition + safe external storage persistence
+            setEvents(merged);
+            saveToStorage(merged).catch(() => {});
+            isHydratedRef.current = true;
             setIsLoading(false);
             setError(null);
           },
@@ -293,7 +390,7 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setIsLoading(false);
     }
 
-    // 3. Multi-Trigger Outbox Drain Listeners:
+    // 5. Multi-Trigger Outbox Drain Listeners:
     // Trigger A: Network status transition to online
     const unsubscribeNet = subscribeToNetworkStatus((online) => {
       if (online) {
@@ -309,6 +406,7 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Trigger B: AppState transition to 'active' (foreground return)
     const handleAppStateChange = (nextState: AppStateStatus) => {
       if (nextState === 'active') {
+        setLastRefreshTick(Date.now());
         if (drainTimeoutRef.current) {
           clearTimeout(drainTimeoutRef.current);
           drainTimeoutRef.current = null;
@@ -319,16 +417,22 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
     const appStateSub = AppState.addEventListener('change', handleAppStateChange);
 
-    // Trigger C: Startup online drain attempt
+    // Trigger C: Periodic 60s tick to auto-expire past events and conflicts in real-time
+    const tickInterval = setInterval(() => {
+      setLastRefreshTick(Date.now());
+    }, 60000);
+
+    // Trigger D: Startup online drain attempt
     drainPendingWrites().catch(() => {});
 
     return () => {
       unsubscribeFirestore();
       unsubscribeNet();
       appStateSub.remove();
+      clearInterval(tickInterval);
       if (drainTimeoutRef.current) clearTimeout(drainTimeoutRef.current);
     };
-  }, [user, firebaseUser, drainPendingWrites]);
+  }, [user, firebaseUser, authLoading, drainPendingWrites]);
 
   // Add Event with client-side canonical ID generation and outbox queuing
   const addEvent = async (
@@ -499,6 +603,9 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const removeEvent = async (id: string): Promise<void> => {
     if (!user) throw new Error('User not logged in');
 
+    // Cancel this event's scheduled OS notifications immediately
+    cancelEventNotifications(id).catch(() => {});
+
     const updated = events.filter((e) => e.id !== id);
     setEvents(updated);
     await saveToStorage(updated);
@@ -543,11 +650,11 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const upcomingEvents = useMemo(() => {
     return getEventsThisWeek(events);
-  }, [events]);
+  }, [events, lastRefreshTick]);
 
   const clashes = useMemo(() => {
     return detectClashes(events);
-  }, [events]);
+  }, [events, lastRefreshTick]);
 
   return (
     <EventsContext.Provider

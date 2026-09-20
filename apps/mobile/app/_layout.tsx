@@ -12,11 +12,26 @@ WebBrowser.maybeCompleteAuthSession();
 
 import { useRouter, useSegments } from 'expo-router';
 import { useAuth } from '../src/context/AuthContext';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
+import { registerForPushNotificationsAsync } from '../src/services/pushNotificationService';
 import { OnboardingModal } from '../src/components/OnboardingModal';
+import { ErrorBoundary } from '../src/components/ErrorBoundary';
+
+// Initialize notification behavior immediately on module load so notifications are never dropped
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 const ONBOARDING_KEY_PREFIX = '@vanko_onboarding_done_';
 
@@ -85,17 +100,37 @@ function InitialLayout() {
     return () => subscription.remove();
   }, []);
 
-  // 2. Listen for push notification click to deep-link to /college
+  // 2. Setup Android notification channel & listen for push notification click to deep-link
   useEffect(() => {
+    if (Platform.OS === 'android') {
+      Notifications.setNotificationChannelAsync('sies-gst-announcements', {
+        name: 'Campus & Community Announcements',
+        description: 'Instant updates for newly added campus events and reminders',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#4F46E5',
+        sound: 'default',
+        enableVibrate: true,
+        showBadge: true,
+      }).catch(() => {});
+    }
+
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data;
-      if (data?.type === 'community_event') {
+      if (data?.type === 'community_event' || data?.type === 'event_reminder') {
         router.push('/(auth)/college');
       }
     });
 
     return () => responseSub.remove();
   }, []);
+
+  // Sync push notification registration whenever user is logged in
+  useEffect(() => {
+    if (user?.uid && Platform.OS !== 'web') {
+      registerForPushNotificationsAsync(user.uid, user.college || 'General').catch(() => {});
+    }
+  }, [user?.uid]);
 
   // 3. Process pending share payload or apply route guard once auth is ready
   useEffect(() => {
@@ -190,12 +225,14 @@ const layoutStyles = StyleSheet.create({
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <EventsProvider>
-          <StatusBar style="light" />
-          <InitialLayout />
-        </EventsProvider>
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <EventsProvider>
+            <StatusBar style="light" />
+            <InitialLayout />
+          </EventsProvider>
+        </AuthProvider>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }

@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../src/context/AuthContext';
 import { useEvents } from '../../src/context/EventsContext';
 import { GlassCard } from '../../src/components/ui/GlassCard';
@@ -26,8 +27,23 @@ import {
   formatFriendlyDate,
   formatTime12Hour,
   getDaysDifference,
+  normalizeDateString,
 } from '@eventpulse/shared';
 import { colors, radii, shadows } from '../../src/theme/tokens';
+import { AdminEventReminderModal } from '../../src/components/AdminEventReminderModal';
+import { registerForPushNotificationsAsync } from '../../src/services/pushNotificationService';
+import { isOnline, subscribeToNetworkStatus } from '../../src/services/networkService';
+
+const SIES_GST_COMMUNITY_CACHE_KEY = '@vanko_cached_community_events_SIES_GST';
+
+function normalizeCommunityEvent(ev: CommunityEvent): CommunityEvent {
+  return {
+    ...ev,
+    event_start_date: normalizeDateString(ev.event_start_date) || ev.event_start_date,
+    event_end_date: normalizeDateString(ev.event_end_date) || ev.event_end_date || null,
+    registration_deadline: normalizeDateString(ev.registration_deadline) || ev.registration_deadline || null,
+  };
+}
 
 export default function CollegeFeedScreen() {
   const router = useRouter();
@@ -39,6 +55,8 @@ export default function CollegeFeedScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [attendingId, setAttendingId] = useState<string | null>(null);
+  const [reminderEvent, setReminderEvent] = useState<CommunityEvent | null>(null);
+  const [isNetworkOnline, setIsNetworkOnline] = useState<boolean>(true);
 
   // Extract 2-letter uppercase initials from user profile
   const getUserInitials = (): string => {
@@ -51,8 +69,10 @@ export default function CollegeFeedScreen() {
   };
 
   const isUserGoing = (commEvent: CommunityEvent): boolean => {
-    if (!user?.uid || !commEvent.attendees) return false;
-    return commEvent.attendees.includes(user.uid);
+    if (!user?.uid) return false;
+    const inAttendees = Array.isArray(commEvent.attendees) && commEvent.attendees.includes(user.uid);
+    const inPreviews = !!commEvent.attendeePreviews && user.uid in commEvent.attendeePreviews;
+    return inAttendees || inPreviews;
   };
 
   const handleToggleAttendance = async (commEvent: CommunityEvent) => {
@@ -70,6 +90,9 @@ export default function CollegeFeedScreen() {
         getUserInitials(),
         !currentlyGoing
       );
+      if (!currentlyGoing) {
+        registerForPushNotificationsAsync(user.uid, user.college || 'SIES_GST').catch(() => {});
+      }
     } catch (err: any) {
       console.error('Error toggling attendance:', err);
       Alert.alert('Notice', 'Could not update your attendance.');
@@ -78,10 +101,51 @@ export default function CollegeFeedScreen() {
     }
   };
 
-  // Subscribe to live SIES GST community events
+  // 1. Initial Frame-0 hydration from persistent device storage
   useEffect(() => {
-    const unsubscribe = subscribeToCommunityEvents('SIES_GST', (list) => {
-      setCommunityEvents(list);
+    AsyncStorage.getItem(SIES_GST_COMMUNITY_CACHE_KEY)
+      .then((stored) => {
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setCommunityEvents(parsed.map(normalizeCommunityEvent));
+            }
+          } catch {
+            // Ignored
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // 2. Track network online/offline status for live banner indicator
+  useEffect(() => {
+    const unsubscribe = subscribeToNetworkStatus((online) => {
+      setIsNetworkOnline(online);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 3. Subscribe to live SIES GST community events with offline cache shield
+  useEffect(() => {
+    const unsubscribe = subscribeToCommunityEvents('SIES_GST', async (list, fromCache) => {
+      const online = await isOnline();
+
+      // CRITICAL OFFLINE / CACHE SHIELD:
+      // If Firestore emits an empty list while offline or fromCache is true,
+      // do NOT wipe cached SIES GST events!
+      if (list.length === 0) {
+        if (fromCache || !online) {
+          return;
+        }
+      }
+
+      const normalized = list.map(normalizeCommunityEvent);
+      setCommunityEvents(normalized);
+      if (normalized.length > 0) {
+        AsyncStorage.setItem(SIES_GST_COMMUNITY_CACHE_KEY, JSON.stringify(normalized)).catch(() => {});
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -99,11 +163,14 @@ export default function CollegeFeedScreen() {
 
   // Find matching event in student's personal calendar
   const getSavedPersonalEvent = (commEvent: CommunityEvent) => {
-    return userEvents.find(
-      (e) =>
+    const cleanCommDate = commEvent.event_start_date ? commEvent.event_start_date.slice(0, 10) : '';
+    return userEvents.find((e) => {
+      const cleanUserDate = e.event_start_date ? e.event_start_date.slice(0, 10) : '';
+      return (
         e.title.toLowerCase().trim() === commEvent.title.toLowerCase().trim() &&
-        e.event_start_date === commEvent.event_start_date
-    );
+        cleanUserDate === cleanCommDate
+      );
+    });
   };
 
   const isSavedToPersonal = (commEvent: CommunityEvent) => {
@@ -118,6 +185,9 @@ export default function CollegeFeedScreen() {
       if (existing) {
         // Remove from student's private calendar
         await removeEvent(existing.id);
+        if (user && isUserGoing(commEvent)) {
+          await toggleCommunityEventAttendance(commEvent.id, user.uid, getUserInitials(), false).catch(() => {});
+        }
         Alert.alert('Removed from Calendar', `"${commEvent.title}" was removed from your personal schedule.`);
       } else {
         // Add to student's private calendar
@@ -138,6 +208,11 @@ export default function CollegeFeedScreen() {
           reminder_offsets: [4320, 1440, 0],
           status: 'upcoming',
         });
+        // Automatically sync attendance so student receives targeted admin reminders for this saved event
+        if (user && !isUserGoing(commEvent)) {
+          await toggleCommunityEventAttendance(commEvent.id, user.uid, getUserInitials(), true).catch(() => {});
+          registerForPushNotificationsAsync(user.uid, user.college || 'SIES_GST').catch(() => {});
+        }
         Alert.alert('Saved to Calendar', `"${commEvent.title}" was added to your private schedule.`);
       }
     } catch (err: any) {
@@ -220,13 +295,22 @@ export default function CollegeFeedScreen() {
 
         {/* Live Feed Banner */}
         <View style={styles.liveBanner}>
-          <View style={styles.liveDot} />
+          <View style={[styles.liveDot, !isNetworkOnline && { backgroundColor: colors.warning }]} />
           <Text style={styles.liveBannerText}>
             {communityEvents.length > 0
-              ? `${communityEvents.length} live event${communityEvents.length !== 1 ? 's' : ''} from SIES GST`
-              : 'Live feed — events posted here by admin'}
+              ? isNetworkOnline
+                ? `${communityEvents.length} live event${communityEvents.length !== 1 ? 's' : ''} from SIES GST`
+                : `${communityEvents.length} event${communityEvents.length !== 1 ? 's' : ''} (Offline Mode)`
+              : isNetworkOnline
+              ? 'Live feed — events posted here by admin'
+              : 'Offline — no cached campus events'}
           </Text>
-          <Ionicons name="wifi" size={12} color="#16A34A" style={{ marginLeft: 'auto' }} />
+          <Ionicons
+            name={isNetworkOnline ? 'wifi' : 'cloud-offline-outline'}
+            size={13}
+            color={isNetworkOnline ? '#16A34A' : colors.warning}
+            style={{ marginLeft: 'auto' }}
+          />
         </View>
 
         {/* Filter Chips */}
@@ -371,8 +455,8 @@ export default function CollegeFeedScreen() {
                   );
                 })()}
 
-                {/* Action Buttons */}
-                <View style={styles.cardActionsRow}>
+                {/* Student Actions Row */}
+                <View style={styles.studentActionsRow}>
                   {/* Public "I'm Going" Action */}
                   <TouchableOpacity
                     style={[styles.goingButton, isUserGoing(item) && styles.goingButtonActive]}
@@ -381,11 +465,15 @@ export default function CollegeFeedScreen() {
                     activeOpacity={0.8}
                   >
                     <Ionicons
-                      name={isUserGoing(item) ? 'checkmark-circle-outline' : 'people-outline'}
+                      name={isUserGoing(item) ? 'checkmark-circle' : 'people-outline'}
                       size={14}
                       color={isUserGoing(item) ? colors.success : colors.textPrimary}
                     />
-                    <Text style={[styles.goingButtonText, isUserGoing(item) && styles.goingButtonTextActive]}>
+                    <Text
+                      style={[styles.goingButtonText, isUserGoing(item) && styles.goingButtonTextActive]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
                       {attendingId === item.id
                         ? 'Updating...'
                         : isUserGoing(item)
@@ -406,8 +494,12 @@ export default function CollegeFeedScreen() {
                       size={14}
                       color={saved ? colors.primary : '#FFFFFF'}
                     />
-                    <Text style={[styles.saveButtonText, saved && styles.saveButtonTextDone]}>
-                      {isSaving ? 'Updating...' : saved ? 'Saved (Private)' : 'Save Event'}
+                    <Text
+                      style={[styles.saveButtonText, saved && styles.saveButtonTextDone]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {isSaving ? 'Updating...' : saved ? 'Saved' : 'Save Event'}
                     </Text>
                   </TouchableOpacity>
 
@@ -416,27 +508,65 @@ export default function CollegeFeedScreen() {
                       style={styles.linkButton}
                       onPress={() => Linking.openURL(item.registration_link!)}
                       activeOpacity={0.8}
+                      accessibilityLabel="Open registration link"
                     >
                       <Ionicons name="open-outline" size={14} color={colors.textPrimary} />
                     </TouchableOpacity>
                   )}
-
-                  {isAdmin && (
-                    <TouchableOpacity
-                      style={styles.deleteAdminBtn}
-                      onPress={() => handleDeleteCommunityEvent(item.id, item.title)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="trash-outline" size={15} color={colors.danger} />
-                    </TouchableOpacity>
-                  )}
                 </View>
+
+                {/* Admin Management Section (Exclusive to Admins) */}
+                {isAdmin && (
+                  <View style={styles.adminCardSection}>
+                    <View style={styles.adminSectionHeader}>
+                      <View style={styles.adminHeaderBadge}>
+                        <Ionicons name="shield-checkmark" size={10} color="#4F46E5" />
+                        <Text style={styles.adminHeaderBadgeText}>ADMIN TOOLS</Text>
+                      </View>
+                      <View style={styles.adminAudiencePill}>
+                        <Ionicons name="people" size={11} color={colors.textSecondary} />
+                        <Text style={styles.adminAudienceText} numberOfLines={1}>
+                          {item.attendees?.length || 0} saved to schedule
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.adminButtonsRow}>
+                      <TouchableOpacity
+                        style={styles.adminNotifyButton}
+                        onPress={() => setReminderEvent(item)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="notifications" size={14} color="#FFFFFF" />
+                        <Text style={styles.adminNotifyButtonText} numberOfLines={1} ellipsizeMode="tail">
+                          Notify Attendees{item.attendees && item.attendees.length > 0 ? ` (${item.attendees.length})` : ''}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.adminDeleteButton}
+                        onPress={() => handleDeleteCommunityEvent(item.id, item.title)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                        accessibilityLabel="Delete event from campus feed"
+                      >
+                        <Ionicons name="trash-outline" size={15} color={colors.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
               </GlassCard>
             );
           })
         )}
       </ScrollView>
+
+      {/* Admin Event Reminder & Push Notification Modal */}
+      <AdminEventReminderModal
+        visible={!!reminderEvent}
+        onClose={() => setReminderEvent(null)}
+        event={reminderEvent}
+      />
     </SafeAreaView>
   );
 }
@@ -451,7 +581,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 110,
     gap: 14,
     maxWidth: 640,
     alignSelf: 'center',
@@ -666,7 +796,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     flex: 1,
   },
-  cardActionsRow: {
+  studentActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -726,13 +856,15 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   goingButton: {
+    flex: 1,
+    minWidth: 0,
+    height: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
     backgroundColor: colors.canvasSubtle,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
     borderRadius: radii.control,
     borderWidth: 1,
     borderColor: colors.glassBorder,
@@ -749,31 +881,16 @@ const styles = StyleSheet.create({
   goingButtonTextActive: {
     color: colors.success,
   },
-  linkButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.canvasSubtle,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: radii.control,
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-  },
-  linkButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
   saveButton: {
     flex: 1,
+    minWidth: 0,
+    height: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
     backgroundColor: colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
     borderRadius: radii.control,
   },
   saveButtonDone: {
@@ -789,9 +906,97 @@ const styles = StyleSheet.create({
   saveButtonTextDone: {
     color: colors.textPrimary,
   },
-  deleteAdminBtn: {
-    padding: 8,
+  linkButton: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.canvasSubtle,
     borderRadius: radii.control,
-    backgroundColor: colors.dangerLight,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    flexShrink: 0,
+  },
+  adminCardSection: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: radii.control,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8,
+  },
+  adminSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  adminHeaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  adminHeaderBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#4F46E5',
+    letterSpacing: 0.4,
+  },
+  adminAudiencePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  adminAudienceText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  adminButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  adminNotifyButton: {
+    flex: 1,
+    minWidth: 0,
+    height: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    borderRadius: radii.control,
+    paddingHorizontal: 12,
+    ...shadows.subtle,
+  },
+  adminNotifyButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  adminDeleteButton: {
+    width: 38,
+    height: 38,
+    borderRadius: radii.control,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
 });

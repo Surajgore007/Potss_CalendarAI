@@ -32,7 +32,7 @@ const SLIDES: Slide[] = [
     subtitle: 'Your smart campus event assistant.',
     steps: [
       { icon: 'calendar-outline', text: 'Track hackathons, CTFs, and workshops in one place' },
-      { icon: 'school-outline', text: 'See live events from SIES GST community feed' },
+      { icon: 'school-outline', text: 'Browse curated campus and tech community events' },
       { icon: 'notifications-outline', text: 'Get reminders before deadlines so you never miss out' },
     ],
   },

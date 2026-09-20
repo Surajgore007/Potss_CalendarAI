@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Platform } from 'react-native';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { Platform, AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
@@ -20,9 +20,17 @@ import {
   User as FirebaseUser,
   Auth,
 } from 'firebase/auth';
-import { UserProfile, UserRole, initFirebase, trackUserRegistration, fetchUserRole } from '@eventpulse/shared';
+import {
+  UserProfile,
+  UserRole,
+  initFirebase,
+  trackUserRegistration,
+  fetchUserRole,
+  updateUserDisplayNameInFirestore,
+} from '@eventpulse/shared';
 import { isOnline } from '../services/networkService';
 import { registerForPushNotificationsAsync, unregisterPushTokenAsync } from '../services/pushNotificationService';
+import { syncAllEventNotifications } from '../services/notificationService';
 
 let cachedAuth: Auth | null = null;
 function getAppAuth(app: any): Auth {
@@ -46,6 +54,7 @@ function getAppAuth(app: any): Auth {
 WebBrowser.maybeCompleteAuthSession();
 
 const AUTH_STORAGE_KEY = '@eventpulse_saved_user_profile';
+const EVENTS_CACHE_LATEST = '@vanko_cached_events_latest';
 
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
 const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '';
@@ -64,6 +73,8 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<void>;
   signOutUser: () => Promise<void>;
   getIdToken: (forceRefresh?: boolean) => Promise<string | null>;
+  refreshPermissions: () => Promise<boolean>;
+  updateDisplayName: (newName: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -85,10 +96,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }),
   });
 
-  // 1. Immediate offline session hydration from local encrypted device storage
+  // 1. Unified offline-first auth session hydration and Firebase Auth listener
   useEffect(() => {
+    let unsubscribe = () => {};
+    let isMounted = true;
+
+    // Step 1: Immediately hydrate session from local encrypted device storage
     AsyncStorage.getItem(AUTH_STORAGE_KEY)
       .then((stored) => {
+        if (!isMounted) return;
         if (stored) {
           try {
             const parsed = JSON.parse(stored);
@@ -101,65 +117,74 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => {})
+      .finally(() => {
+        if (!isMounted) return;
 
-  // 2. Listen to Firebase auth state changes (Zero fake mock accounts)
-  useEffect(() => {
-    let unsubscribe = () => {};
+        // Step 2: Once storage check completes, attach Firebase auth listener
+        try {
+          const { app } = initFirebase();
+          const auth = getAppAuth(app);
 
-    try {
-      const { app } = initFirebase();
-      const auth = getAppAuth(app);
+          unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
+            if (!isMounted) return;
+            if (fbUser) {
+              setFirebaseUser(fbUser);
+              const online = await isOnline();
+              let userRole: UserRole = 'student';
+              let college = 'General';
+              try {
+                // 1. Single Source of Truth: Decode Custom Claims directly from Firebase ID Token
+                const tokenResult = await fbUser.getIdTokenResult();
+                const claims = tokenResult?.claims || {};
+                if (claims.admin === true || claims.role === 'admin') {
+                  userRole = 'admin';
+                } else if (online) {
+                  userRole = await fetchUserRole(fbUser.uid);
+                } else if (user?.role) {
+                  userRole = user.role;
+                }
 
-      unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
-        if (fbUser) {
-          setFirebaseUser(fbUser);
-          let userRole: UserRole = 'student';
-          try {
-            const online = await isOnline();
-            if (online) {
-              userRole = await fetchUserRole(fbUser.uid);
-            } else if (user?.role) {
-              userRole = user.role;
+                if (typeof claims.college === 'string' && claims.college.trim()) {
+                  college = claims.college.trim();
+                }
+              } catch {
+                userRole = user?.role || 'student';
+              }
+
+              const profile: UserProfile = {
+                uid: fbUser.uid,
+                email: fbUser.email || '',
+                displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'User',
+                photoURL: fbUser.photoURL || null,
+                role: userRole,
+                college,
+                defaultReminderOffsets: [4320, 1440, 0],
+              };
+              setUser(profile);
+              await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
+
+              if (online) {
+                trackUserRegistration(fbUser.uid).catch(() => {});
+                registerForPushNotificationsAsync(fbUser.uid, college).catch(() => {});
+              }
+            } else {
+              // fbUser is null: Firebase Auth is offline or unauthenticated
+              setFirebaseUser(null);
+              // CRITICAL: Preserve local user profile from AUTH_STORAGE_KEY so offline sessions remain active.
             }
-          } catch {
-            userRole = user?.role || 'student';
-          }
-
-          const profile: UserProfile = {
-            uid: fbUser.uid,
-            email: fbUser.email || '',
-            displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'User',
-            photoURL: fbUser.photoURL || null,
-            role: userRole,
-            defaultReminderOffsets: [4320, 1440, 0],
-          };
-          setUser(profile);
-          await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
-          trackUserRegistration(fbUser.uid).catch(() => {});
-          registerForPushNotificationsAsync(fbUser.uid, 'SIES_GST').catch(() => {});
-        } else {
-          // Check if online before clearing session
-          const online = await isOnline();
-          if (online) {
-            // Online: genuine session expiry or revocation from Firebase Auth
-            setFirebaseUser(null);
-            setUser(null);
-            await AsyncStorage.removeItem(AUTH_STORAGE_KEY).catch(() => {});
-          } else {
-            // Offline: preserve the local cached session from AUTH_STORAGE_KEY!
-            // Do NOT wipe the user session while offline.
-          }
+            setIsLoading(false);
+          });
+        } catch (err) {
+          console.warn('Firebase Auth initialization warning:', err);
+          setIsLoading(false);
         }
-        setIsLoading(false);
       });
-    } catch (err) {
-      console.warn('Firebase Auth initialization warning:', err);
-      setIsLoading(false);
-    }
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   // Handle real response from Google OAuth Flow
@@ -363,7 +388,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e) {
         console.warn('Sign out warning:', e);
       }
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+      await AsyncStorage.multiRemove([AUTH_STORAGE_KEY, EVENTS_CACHE_LATEST]).catch(() => {});
+      // Cancel scheduled notifications only upon explicit user logout
+      await syncAllEventNotifications([], { allowPurgeAll: true }).catch(() => {});
       setUser(null);
       setFirebaseUser(null);
     } finally {
@@ -378,6 +405,122 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.error('Failed to get fresh Firebase ID token:', err);
       return null;
+    }
+  };
+
+  /**
+   * Force refresh Firebase Auth ID token and update custom claims and user profile.
+   * Resolves mid-session admin elevation without requiring the user to log out and back in.
+   */
+  const refreshPermissions = async (): Promise<boolean> => {
+    if (!firebaseUser) return false;
+    try {
+      const tokenResult = await firebaseUser.getIdTokenResult(true);
+      const claims = tokenResult?.claims || {};
+      let userRole: UserRole = 'student';
+      let college = user?.college || 'General';
+
+      if (claims.admin === true || claims.role === 'admin') {
+        userRole = 'admin';
+      } else {
+        const online = await isOnline();
+        if (online) {
+          userRole = await fetchUserRole(firebaseUser.uid);
+        } else if (user?.role) {
+          userRole = user.role;
+        }
+      }
+
+      if (typeof claims.college === 'string' && claims.college.trim()) {
+        college = claims.college.trim();
+      }
+
+      setUser((prev) => {
+        if (!prev) return null;
+        const updated: UserProfile = {
+          ...prev,
+          role: userRole,
+          college,
+        };
+        AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
+        return updated;
+      });
+
+      return userRole === 'admin';
+    } catch (err) {
+      console.warn('Failed to refresh permissions:', err);
+      return false;
+    }
+  };
+
+  // Throttled permission refresh: Never make background network calls more than once every 15 minutes.
+  // Instantaneous on-demand elevation is handled via the dedicated "Sync Role" button in Settings.
+  const lastForegroundCheckRef = useRef<number>(Date.now());
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active' && firebaseUser) {
+        const now = Date.now();
+        // 15-minute throttle prevents redundant network requests on every app switch
+        if (now - lastForegroundCheckRef.current < 15 * 60 * 1000) {
+          return;
+        }
+        lastForegroundCheckRef.current = now;
+        const online = await isOnline();
+        if (online) {
+          refreshPermissions().catch(() => {});
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [firebaseUser]);
+
+  const updateDisplayName = async (newName: string): Promise<void> => {
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      throw new Error('Display name cannot be empty.');
+    }
+
+    // 1. Instantly update React state in AuthContext so all screens re-render immediately
+    setUser((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        displayName: trimmed,
+      };
+    });
+
+    // 2. Persist to local storage so restarts and offline loads see the updated name immediately
+    try {
+      const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        parsed.displayName = trimmed;
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(parsed));
+      }
+    } catch (err) {
+      console.warn('Could not update cached profile in storage:', err);
+    }
+
+    // 3. Persist to Firebase Auth user profile
+    if (firebaseUser) {
+      try {
+        await updateProfile(firebaseUser, { displayName: trimmed });
+      } catch (err) {
+        console.warn('Could not update Firebase Auth profile:', err);
+      }
+    }
+
+    // 4. Persist to Firestore (/users/{uid})
+    const uid = firebaseUser?.uid || user?.uid;
+    if (uid) {
+      try {
+        await updateUserDisplayNameInFirestore(uid, trimmed);
+      } catch (err) {
+        console.warn('Could not update displayName in Firestore:', err);
+      }
     }
   };
 
@@ -399,6 +542,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sendPasswordReset,
         signOutUser,
         getIdToken,
+        refreshPermissions,
+        updateDisplayName,
       }}
     >
       {children}

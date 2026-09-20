@@ -140,3 +140,32 @@ export interface BroadcastNotificationResponse {
   deduplicated?: boolean;
   message?: string;
 }
+
+export interface EventAttendeeReminderRequest {
+  eventId: string;
+  title: string;
+  message: string;
+  reminderType?: 'reminder' | 'update' | 'promo' | 'custom';
+}
+
+export interface EventAttendeeReminderResponse {
+  success: boolean;
+  attendeesCount: number;
+  notifiedCount: number;
+  message?: string;
+}
+
+export type FeedbackCategory = 'bug' | 'suggestion' | 'complaint' | 'other';
+
+export interface FeedbackSubmission {
+  id: string;
+  category: FeedbackCategory;
+  message: string;
+  attachmentUrl?: string;
+  platform?: string;
+  appVersion?: string;
+  createdAt: string;
+  uid: string;
+  email?: string;
+}
+

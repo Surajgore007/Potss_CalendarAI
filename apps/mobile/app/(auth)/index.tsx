@@ -6,6 +6,7 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -24,16 +25,22 @@ import {
 } from '@eventpulse/shared';
 import { requestNotificationPermissions } from '../../src/services/notificationService';
 import { NotificationCenterModal } from '../../src/components/NotificationCenterModal';
+import { ManualEventModal } from '../../src/components/ManualEventModal';
+import { AdminFeedbackModal } from '../../src/components/AdminFeedbackModal';
+import { FeedbackModal } from '../../src/components/FeedbackModal';
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { user } = useAuth();
-  const { events, clashes } = useEvents();
+  const { user, isAdmin } = useAuth();
+  const { events, clashes, isLoading } = useEvents();
 
   const [activeFeedTab, setActiveFeedTab] = useState<'upcoming' | 'deadlines' | 'history'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadAlertCount, setUnreadAlertCount] = useState(0);
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [showAdminFeedbackModal, setShowAdminFeedbackModal] = useState(false);
+  const [showUserFeedbackModal, setShowUserFeedbackModal] = useState(false);
 
   // Request Android runtime notification permissions immediately on dashboard mount
   React.useEffect(() => {
@@ -124,6 +131,16 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.topActionsRow}>
+            {/* Quick Add Event Manually */}
+            <TouchableOpacity
+              style={styles.addQuickBtn}
+              onPress={() => setShowManualModal(true)}
+              activeOpacity={0.8}
+              accessibilityLabel="Add event manually"
+            >
+              <Ionicons name="add" size={19} color={colors.textPrimary} />
+            </TouchableOpacity>
+
             {/* Notification Bell beside Extract */}
             <TouchableOpacity
               style={styles.notificationBellBtn}
@@ -183,31 +200,15 @@ export default function DashboardScreen() {
             onPress={() => router.push('/calendar')}
             activeOpacity={0.7}
           >
-            <View style={styles.statusBadgeRow}>
-              <View
-                style={[
-                  styles.statusIndicatorDot,
-                  {
-                    backgroundColor:
-                      clashes.length > 0 ? colors.danger : colors.success,
-                  },
-                ]}
-              />
-              <Text
-                style={[
-                  styles.statusValue,
-                  {
-                    color:
-                      clashes.length > 0 ? colors.danger : colors.textPrimary,
-                  },
-                ]}
-              >
-                {clashes.length > 0 ? `${clashes.length}` : '0'}
-              </Text>
-            </View>
-            <Text style={styles.statusLabel}>
-              {clashes.length > 0 ? 'Conflicts' : 'Conflicts'}
+            <Text
+              style={[
+                styles.statusValue,
+                clashes.length > 0 && { color: colors.danger },
+              ]}
+            >
+              {clashes.length}
             </Text>
+            <Text style={styles.statusLabel}>Conflicts</Text>
           </TouchableOpacity>
         </GlassCard>
 
@@ -274,13 +275,23 @@ export default function DashboardScreen() {
                 Paste any WhatsApp announcement to automatically extract events.
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.emptyHeroBtn}
-              onPress={() => router.push('/extract')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.emptyHeroBtnText}>Add</Text>
-            </TouchableOpacity>
+            <View style={styles.emptyHeroBtnsRow}>
+              <TouchableOpacity
+                style={styles.emptyHeroManualBtn}
+                onPress={() => setShowManualModal(true)}
+                activeOpacity={0.8}
+                accessibilityLabel="Add event manually"
+              >
+                <Ionicons name="add" size={16} color={colors.textPrimary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.emptyHeroBtn}
+                onPress={() => router.push('/extract')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.emptyHeroBtnText}>Extract</Text>
+              </TouchableOpacity>
+            </View>
           </GlassCard>
         )}
 
@@ -347,18 +358,41 @@ export default function DashboardScreen() {
 
           {/* List Items */}
           {activeFeedTab === 'upcoming' ? (
-            upcomingList.length === 0 ? (
+            isLoading && events.length === 0 ? (
               <View style={styles.emptyStateContainer}>
-                <Ionicons name="calendar-outline" size={24} color={colors.textSecondary} />
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={[styles.emptyStateText, { marginTop: 8 }]}>Loading events...</Text>
+              </View>
+            ) : upcomingList.length === 0 ? (
+              <View style={styles.emptyStateContainer}>
+                <Ionicons name="calendar-outline" size={28} color={colors.textSecondary} />
                 <Text style={styles.emptyStateText}>No upcoming events</Text>
+                <View style={styles.emptyStateActionsRow}>
+                  <TouchableOpacity
+                    style={styles.emptyStateAddBtn}
+                    onPress={() => setShowManualModal(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="add-circle-outline" size={15} color={colors.primary} />
+                    <Text style={styles.emptyStateAddBtnText}>Add Event</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.emptyStateExtractBtn}
+                    onPress={() => router.push('/extract')}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="sparkles-outline" size={14} color="#FFFFFF" />
+                    <Text style={styles.emptyStateExtractBtnText}>Extract</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : (
               <View style={styles.cardsList}>
                 {upcomingList.map((ev) => {
                   const conf = EVENT_TYPE_CONFIG[ev.type] || EVENT_TYPE_CONFIG.other;
-                  const dayNum = ev.event_start_date ? ev.event_start_date.split('-')[2] : '--';
+                  const dayNum = ev.event_start_date ? ev.event_start_date.slice(0, 10).split('-')[2] : '--';
                   const monthName = ev.event_start_date
-                    ? new Date(ev.event_start_date).toLocaleDateString('en-US', { month: 'short' })
+                    ? new Date(ev.event_start_date.slice(0, 10)).toLocaleDateString('en-US', { month: 'short' })
                     : '';
 
                   return (
@@ -398,7 +432,12 @@ export default function DashboardScreen() {
               </View>
             )
           ) : activeFeedTab === 'deadlines' ? (
-            deadlinesList.length === 0 ? (
+            isLoading && events.length === 0 ? (
+              <View style={styles.emptyStateContainer}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={[styles.emptyStateText, { marginTop: 8 }]}>Loading deadlines...</Text>
+              </View>
+            ) : deadlinesList.length === 0 ? (
               <View style={styles.emptyStateContainer}>
                 <Ionicons name="alarm-outline" size={24} color={colors.textSecondary} />
                 <Text style={styles.emptyStateText}>No registration deadlines</Text>
@@ -465,7 +504,8 @@ export default function DashboardScreen() {
               <View style={styles.cardsList}>
                 {historyList.map((ev) => {
                   const conf = EVENT_TYPE_CONFIG[ev.type] || EVENT_TYPE_CONFIG.other;
-                  const targetDate = ev.event_end_date || ev.event_start_date || ev.registration_deadline;
+                  const rawTarget = ev.event_end_date || ev.event_start_date || ev.registration_deadline;
+                  const targetDate = rawTarget ? rawTarget.slice(0, 10) : null;
                   const dayNum = targetDate ? targetDate.split('-')[2] : '--';
                   const monthName = targetDate
                     ? new Date(targetDate).toLocaleDateString('en-US', { month: 'short' })
@@ -516,6 +556,30 @@ export default function DashboardScreen() {
         events={events}
         clashes={clashes}
         onUnreadCountChange={setUnreadAlertCount}
+        onOpenAdminFeedback={() => setShowAdminFeedbackModal(true)}
+        onOpenUserFeedback={() => setShowUserFeedbackModal(true)}
+      />
+
+      {/* Manual Event Modal */}
+      <ManualEventModal
+        visible={showManualModal}
+        onClose={() => setShowManualModal(false)}
+        onEventCreated={(id) => router.push(`/event/${id}`)}
+      />
+
+      {/* Admin Feedback Review Modal */}
+      {isAdmin && (
+        <AdminFeedbackModal
+          visible={showAdminFeedbackModal}
+          onClose={() => setShowAdminFeedbackModal(false)}
+        />
+      )}
+
+      {/* User Feedback & Replies Modal */}
+      <FeedbackModal
+        visible={showUserFeedbackModal}
+        onClose={() => setShowUserFeedbackModal(false)}
+        initialTab="replies"
       />
     </SafeAreaView>
   );
@@ -531,7 +595,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 48,
+    paddingBottom: 110,
     gap: 14,
     maxWidth: 480,
     alignSelf: 'center',
@@ -570,6 +634,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flexShrink: 0,
+  },
+  addQuickBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.pill,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
   },
   notificationBellBtn: {
     width: 36,
@@ -645,16 +719,6 @@ const styles = StyleSheet.create({
     width: 1,
     height: 28,
     backgroundColor: 'rgba(0, 0, 0, 0.06)',
-  },
-  statusBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  statusIndicatorDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
   },
   statusValue: {
     fontSize: 19,
@@ -774,6 +838,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  emptyHeroBtnsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
+  emptyHeroManualBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.pill,
+    backgroundColor: colors.canvasSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
   feedSection: {
     gap: 10,
   },
@@ -891,6 +971,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     fontWeight: '500',
+  },
+  emptyStateActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  emptyStateAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  emptyStateAddBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  emptyStateExtractBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radii.pill,
+  },
+  emptyStateExtractBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   historyCard: {
     opacity: 0.85,

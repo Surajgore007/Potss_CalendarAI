@@ -16,7 +16,7 @@ const DEFAULT_EAS_PROJECT_ID = 'd27b40b1-ee0c-41d0-8304-03737c41cc50';
  */
 export async function registerForPushNotificationsAsync(
   uid: string,
-  college: string = 'SIES_GST'
+  college: string = 'General'
 ): Promise<string | null> {
   if (Platform.OS === 'web') return null;
 
@@ -24,8 +24,8 @@ export async function registerForPushNotificationsAsync(
     // 1. Android Notification Channel setup
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('sies-gst-announcements', {
-        name: 'SIES GST Announcements',
-        description: 'Instant updates for newly added college events and hackathons',
+        name: 'Campus & Community Announcements',
+        description: 'Instant updates for newly added campus events, deadlines, and hackathons',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#4F46E5',
@@ -62,19 +62,19 @@ export async function registerForPushNotificationsAsync(
 
     if (!pushToken) return null;
 
-    // 4. Save locally and sync to Firestore
-    const cached = await AsyncStorage.getItem(PUSH_TOKEN_STORAGE_KEY);
-    if (cached !== pushToken) {
-      await AsyncStorage.setItem(PUSH_TOKEN_STORAGE_KEY, pushToken);
-      await saveUserPushToken(uid, pushToken, college);
-    }
+    // 4. Always sync push token directly to current user's profile in Firestore (/users/{uid})
+    await saveUserPushToken(uid, pushToken, college);
+    await AsyncStorage.setItem(`${PUSH_TOKEN_STORAGE_KEY}_${uid}`, pushToken);
+    console.log('[Push] Registered Expo push token for UID:', uid, pushToken);
 
     return pushToken;
   } catch (err: any) {
     if (err?.message?.includes('Default FirebaseApp is not initialized')) {
-      console.info('Native FCM push registration requires native build with google-services.json.');
+      console.info('[Push] Native FCM push registration requires native build with google-services.json.');
+    } else if (err?.message?.includes('Network request failed') || err?.name === 'TypeError') {
+      console.info('[Push] Push notification registration deferred: network currently unreachable.');
     } else {
-      console.warn('Could not register push token:', err);
+      console.warn('[Push] Could not register push token:', err?.message || err);
     }
     return null;
   }

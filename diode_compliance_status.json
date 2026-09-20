@@ -1,0 +1,12 @@
+{
+  "compliant": true,
+  "egress_bytes": 0,
+  "violations_count": 0,
+  "recent_violations": [],
+  "monitored_interface": "loopback",
+  "dual_check_status": {
+    "process_socket_table": "CLEAN",
+    "nic_io_counter": "CLEAN"
+  },
+  "last_checked": "2026-09-15T14:38:01.978790+00:00"
+}

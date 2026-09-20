@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,10 @@ import {
   Linking,
   Alert,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../../src/components/Header';
 import { TypeBadge } from '../../../src/components/TypeBadge';
@@ -32,7 +33,6 @@ import {
   formatTime12Hour,
   getUrgencyInfo,
   THEME_DESIGN,
-  validateEventForSave,
   isValidTimeFormat,
   sanitizeUrl,
 } from '@eventpulse/shared';
@@ -42,7 +42,8 @@ const EVENT_MODES: EventMode[] = ['online', 'offline', 'hybrid'];
 const STATUSES: EventStatus[] = ['upcoming', 'registered', 'skipped'];
 
 export default function EventDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
+  const id = Array.isArray(rawId) ? rawId[0] : (rawId || '');
   const router = useRouter();
   const { events, editEvent, removeEvent } = useEvents();
 
@@ -78,11 +79,100 @@ export default function EventDetailScreen() {
     status: 'upcoming',
   });
 
+  // Track the last event ID this screen was initialized for.
+  // When expo-router reuses the component for a different event ID,
+  // we must atomically reset all local state to avoid state leakage.
+  const lastRenderedIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (currentEvent) {
+    if (id && id !== lastRenderedIdRef.current) {
+      lastRenderedIdRef.current = id;
+      // Reset edit mode and pickers for the new event
+      setIsEditing(false);
+      setIsSaving(false);
+      setActiveDatePicker(null);
+      setShowTimePicker(false);
+      setShowRawText(false);
+    }
+  }, [id]);
+
+  // Sync form data whenever the Firestore snapshot updates (only when not actively editing)
+  useEffect(() => {
+    if (currentEvent && !isEditing) {
       setFormData({ ...currentEvent });
     }
-  }, [currentEvent]);
+  }, [currentEvent, isEditing]);
+
+  const isEditingRef = useRef(isEditing);
+  isEditingRef.current = isEditing;
+  const currentEventRef = useRef(currentEvent);
+  currentEventRef.current = currentEvent;
+
+  // Intercept Android hardware back button to show discard dialog when editing
+  useFocusEffect(
+    useCallback(() => {
+      const onHardwareBack = () => {
+        if (isEditingRef.current) {
+          Alert.alert(
+            'Discard Changes?',
+            'You have unsaved edits. Are you sure you want to go back without saving?',
+            [
+              { text: 'Keep Editing', style: 'cancel' },
+              {
+                text: 'Discard',
+                style: 'destructive',
+                onPress: () => {
+                  setIsEditing(false);
+                  if (currentEventRef.current) setFormData({ ...currentEventRef.current });
+                  router.back();
+                },
+              },
+            ]
+          );
+          return true; // Prevent default back behavior
+        }
+        return false; // Allow default back behavior
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+      return () => {
+        subscription.remove();
+      };
+    }, [router])
+  );
+
+  // Guarantee clean unmount
+  useEffect(() => {
+    return () => {
+      setIsEditing(false);
+      setIsSaving(false);
+      setActiveDatePicker(null);
+      setShowTimePicker(false);
+    };
+  }, []);
+
+  // Custom back handler for the Header back button — same discard logic
+  const handleBack = useCallback(() => {
+    if (isEditing) {
+      Alert.alert(
+        'Discard Changes?',
+        'You have unsaved edits. Are you sure you want to go back without saving?',
+        [
+          { text: 'Keep Editing', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              setIsEditing(false);
+              if (currentEvent) setFormData({ ...currentEvent });
+              router.back();
+            },
+          },
+        ]
+      );
+    } else {
+      router.back();
+    }
+  }, [isEditing, currentEvent, router]);
 
   if (!currentEvent && !formData.title) {
     return (
@@ -163,16 +253,29 @@ export default function EventDetailScreen() {
       <Header
         title={isEditing ? 'Edit Event' : 'Event Details'}
         showBack
+        onBack={handleBack}
         rightAction={
           <View style={styles.headerBtns}>
             {isEditing ? (
-              <TouchableOpacity style={styles.saveHeaderBtn} onPress={handleSave} disabled={isSaving}>
-                {isSaving ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.saveHeaderBtnText}>Save</Text>
-                )}
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={[styles.headerIconBtn, styles.cancelHeaderBtn]}
+                  onPress={() => {
+                    setIsEditing(false);
+                    if (currentEvent) setFormData({ ...currentEvent });
+                  }}
+                  disabled={isSaving}
+                >
+                  <Text style={styles.cancelHeaderBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.saveHeaderBtn} onPress={handleSave} disabled={isSaving}>
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.saveHeaderBtnText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </>
             ) : (
               <>
                 <TouchableOpacity style={styles.headerIconBtn} onPress={() => setIsEditing(true)}>
@@ -569,6 +672,19 @@ const styles = StyleSheet.create({
   },
   deleteHeaderBtn: {
     backgroundColor: '#FFF1F2',
+  },
+  cancelHeaderBtn: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  cancelHeaderBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
   },
   saveHeaderBtn: {
     backgroundColor: '#4F46E5',

@@ -23,6 +23,9 @@ ios/
 *.keystore
 *secret*.json
 serviceAccountKey.json
+*adminsdk*.json
+*-firebase-adminsdk-*.json
+calendarai-*.json
 google-services.json
 GoogleService-Info.plist
 

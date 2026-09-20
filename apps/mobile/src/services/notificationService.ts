@@ -273,21 +273,39 @@ export async function remapNotificationIds(oldId: string, newId: string, event: 
   }
 }
 
+export interface SyncNotificationOptions {
+  allowPurgeAll?: boolean;
+}
+
 // Mutex & Debounce state to serialize sync calls
 let isSyncing = false;
 let hasQueuedSync = false;
 let queuedEvents: CalendarEvent[] | null = null;
+let queuedOptions: SyncNotificationOptions | undefined = undefined;
 
 /**
- * Sync all notifications for active events with concurrency lock and legacy purge
+ * Sync all notifications for active events with concurrency lock and legacy purge.
+ * CRITICAL SAFETY: If events is empty, will NOT cancel notifications unless options?.allowPurgeAll is explicitly true.
  */
-export async function syncAllEventNotifications(events: CalendarEvent[]): Promise<void> {
+export async function syncAllEventNotifications(
+  events: CalendarEvent[],
+  options?: SyncNotificationOptions
+): Promise<void> {
   if (Platform.OS === 'web') return;
 
-  // If already syncing, queue the latest events payload
+  // CRITICAL SAFETY GUARD: Prevent unhydrated or empty states from purging Android OS alarms
+  if (events.length === 0 && !options?.allowPurgeAll) {
+    console.warn(
+      '[NotificationService] syncAllEventNotifications called with empty events array without allowPurgeAll: true. Preserving existing OS alarms.'
+    );
+    return;
+  }
+
+  // If already syncing, queue the latest events payload and options
   if (isSyncing) {
     hasQueuedSync = true;
     queuedEvents = events;
+    queuedOptions = options;
     return;
   }
 
@@ -327,8 +345,11 @@ export async function syncAllEventNotifications(events: CalendarEvent[]): Promis
     if (hasQueuedSync && queuedEvents) {
       hasQueuedSync = false;
       const nextEvents = queuedEvents;
+      const nextOptions = queuedOptions;
       queuedEvents = null;
-      syncAllEventNotifications(nextEvents).catch(() => {});
+      queuedOptions = undefined;
+      syncAllEventNotifications(nextEvents, nextOptions).catch(() => {});
     }
   }
 }
+

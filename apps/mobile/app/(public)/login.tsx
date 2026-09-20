@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../../src/context/AuthContext';
 import { GlassCard } from '../../src/components/ui/GlassCard';
 import { GlassButton } from '../../src/components/ui/GlassButton';
@@ -34,6 +35,15 @@ export default function LoginScreen() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Unbundled DPDP Act 2023 Consents & Age Gate (Unchecked by default)
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [agreeDataProcessing, setAgreeDataProcessing] = useState(false);
+  const [confirmAge, setConfirmAge] = useState(false);
+
+  const openPrivacyPolicy = () => {
+    WebBrowser.openBrowserAsync('https://vanko-api.vanko-app.workers.dev/privacy-policy');
+  };
+
   const displayError = errorMsg || authError;
 
   const handleGoogleSignIn = async () => {
@@ -41,9 +51,8 @@ export default function LoginScreen() {
     setSuccessMsg(null);
     try {
       await signInWithGoogle();
-    } catch (err: any) {
-      console.error('Google Sign-in trigger error:', err);
-      setErrorMsg(err.message || 'Google sign-in was not completed. Please try again.');
+    } catch {
+      setErrorMsg('Google sign-in could not be completed. Please try again.');
     }
   };
 
@@ -67,6 +76,10 @@ export default function LoginScreen() {
 
     try {
       if (authMode === 'signup') {
+        if (!agreeTerms || !agreeDataProcessing || !confirmAge) {
+          setErrorMsg('Please review and check all 3 consent and age confirmation boxes to create an account.');
+          return;
+        }
         if (cleanPassword.length < 6) {
           setErrorMsg('Password must be at least 6 characters.');
           return;
@@ -75,8 +88,7 @@ export default function LoginScreen() {
       } else {
         await signInWithEmail(cleanEmail, cleanPassword);
       }
-    } catch (err: any) {
-      console.error('Auth submit error:', err);
+    } catch {
       // Handled and mapped in AuthContext
     }
   };
@@ -91,9 +103,8 @@ export default function LoginScreen() {
     try {
       await sendPasswordReset(cleanEmail);
       setSuccessMsg(`Password reset link sent. Please check your inbox.`);
-    } catch (err: any) {
-      console.error('Password reset error:', err);
-      setErrorMsg("Could not send password reset email. Please try again.");
+    } catch {
+      setErrorMsg('Could not send password reset email. Please verify the email address and try again.');
     }
   };
 
@@ -247,7 +258,7 @@ export default function LoginScreen() {
 
               <GlassInput
                 label="Email Address"
-                placeholder="alex@example.com"
+                placeholder="name@domain.com"
                 value={email}
                 onChangeText={setEmail}
                 maxLength={100}
@@ -277,6 +288,67 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               )}
             </View>
+
+            {/* DPDP Act 2023 Unbundled Consents & Age Declaration */}
+            {authMode === 'signup' && (
+              <View style={styles.consentBlock}>
+                {/* Checkbox 1: Terms of Service */}
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setAgreeTerms(!agreeTerms)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={agreeTerms ? 'checkbox' : 'square-outline'}
+                    size={20}
+                    color={agreeTerms ? colors.primary : colors.textTertiary}
+                  />
+                  <Text style={styles.consentText}>
+                    I accept the{' '}
+                    <Text style={styles.linkText} onPress={openPrivacyPolicy}>
+                      Terms of Service
+                    </Text>
+                    .
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Checkbox 2: DPDP Data Processing Consent */}
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setAgreeDataProcessing(!agreeDataProcessing)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={agreeDataProcessing ? 'checkbox' : 'square-outline'}
+                    size={20}
+                    color={agreeDataProcessing ? colors.primary : colors.textTertiary}
+                  />
+                  <Text style={styles.consentText}>
+                    I consent to the processing of my calendar entries, timetable details, and notification preferences as described in the{' '}
+                    <Text style={styles.linkText} onPress={openPrivacyPolicy}>
+                      Privacy Policy
+                    </Text>
+                    {' '}(DPDP Act 2023).
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Checkbox 3: Age Verification */}
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setConfirmAge(!confirmAge)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={confirmAge ? 'checkbox' : 'square-outline'}
+                    size={20}
+                    color={confirmAge ? colors.primary : colors.textTertiary}
+                  />
+                  <Text style={styles.consentText}>
+                    I confirm I am 18 years of age or older (or an enrolled university/college student).
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Submit Button */}
             <GlassButton
@@ -473,6 +545,28 @@ const styles = StyleSheet.create({
   },
   fieldsStack: {
     gap: 10,
+  },
+  consentBlock: {
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 4,
+    paddingHorizontal: 2,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  consentText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
+  },
+  linkText: {
+    color: colors.primary,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   forgotBtn: {
     alignSelf: 'flex-end',

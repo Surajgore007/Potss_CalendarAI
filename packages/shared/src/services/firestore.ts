@@ -1,6 +1,8 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import {
+  initializeFirestore,
   getFirestore,
+  setLogLevel,
   collection,
   doc,
   setDoc,
@@ -10,6 +12,8 @@ import {
   query,
   orderBy,
   onSnapshot,
+  where,
+  limit,
   Firestore,
   writeBatch,
   Unsubscribe,
@@ -23,6 +27,7 @@ import {
   getCountFromServer,
   runTransaction,
 } from 'firebase/firestore';
+
 import {
   CalendarEvent,
   ExtractedEvent,
@@ -30,7 +35,16 @@ import {
   UserRole,
   BroadcastNotificationRequest,
   BroadcastNotificationResponse,
+  EventAttendeeReminderRequest,
+  EventAttendeeReminderResponse,
 } from '../types/event';
+
+// Suppress noisy internal WebChannel connection retry dumps and offline state transitions
+try {
+  setLogLevel('silent');
+} catch {
+  // Ignored in non-browser/unsupported environments
+}
 
 export interface FirebaseConfig {
   apiKey: string;
@@ -44,10 +58,22 @@ export interface FirebaseConfig {
 let firebaseApp: FirebaseApp | null = null;
 let firestoreDb: Firestore | null = null;
 
+function getOrInitFirestore(app: FirebaseApp): Firestore {
+  try {
+    // Force long polling on React Native to avoid WebChannel stream transport errors and WatchChangeAggregator assertion failure
+    return initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+      ignoreUndefinedProperties: true,
+    });
+  } catch {
+    return getFirestore(app);
+  }
+}
+
 export function initFirebase(config?: Partial<FirebaseConfig>): { app: FirebaseApp; db: Firestore } {
   if (getApps().length > 0) {
     firebaseApp = getApp();
-    firestoreDb = getFirestore(firebaseApp);
+    firestoreDb = getOrInitFirestore(firebaseApp);
     return { app: firebaseApp, db: firestoreDb };
   }
 
@@ -61,7 +87,7 @@ export function initFirebase(config?: Partial<FirebaseConfig>): { app: FirebaseA
   };
 
   firebaseApp = initializeApp(finalConfig);
-  firestoreDb = getFirestore(firebaseApp);
+  firestoreDb = getOrInitFirestore(firebaseApp);
   return { app: firebaseApp, db: firestoreDb };
 }
 
@@ -207,23 +233,39 @@ export async function getEventById(uid: string, eventId: string): Promise<Calend
 /** Subscribe to real-time updates for a user's events */
 export function subscribeToUserEvents(
   uid: string,
-  onUpdate: (events: CalendarEvent[]) => void,
+  onUpdate: (events: CalendarEvent[], fromCache?: boolean) => void,
   onError?: (err: Error) => void
 ): Unsubscribe {
   const db = getDb();
-  const eventsQuery = query(collection(db, 'users', uid, 'events'), orderBy('created_at', 'desc'));
+  // Query collection directly without orderBy so documents missing created_at are never omitted
+  const eventsCol = collection(db, 'users', uid, 'events');
 
   return onSnapshot(
-    eventsQuery,
+    eventsCol,
     (snapshot: QuerySnapshot<DocumentData>) => {
       const events: CalendarEvent[] = [];
       snapshot.forEach((docSnap) => {
-        events.push(docSnap.data() as CalendarEvent);
+        const data = docSnap.data();
+        events.push({
+          id: docSnap.id,
+          ...data,
+          userId: data.userId || uid,
+        } as CalendarEvent);
       });
-      onUpdate(events);
+
+      // Sort in memory by created_at or event_start_date descending
+      events.sort((a, b) => {
+        const dateA = a.created_at || a.event_start_date || '';
+        const dateB = b.created_at || b.event_start_date || '';
+        return dateB.localeCompare(dateA);
+      });
+
+      onUpdate(events, snapshot.metadata.fromCache);
     },
     (error: FirestoreError) => {
-      console.warn('Firestore subscription status:', error.message);
+      if (error.code !== 'unavailable') {
+        console.warn('Firestore subscription status:', error.message);
+      }
       if (onError) onError(error);
     }
   );
@@ -251,8 +293,8 @@ export function subscribeToLiveUserCount(
       }
     },
     (err) => {
-      console.warn('Live stats subscription note:', err.message);
-      onUpdate(null); // On error, show nothing rather than a fake number
+      // Quietly handle offline state without polluting console
+      onUpdate(null);
     }
   );
 }
@@ -267,8 +309,10 @@ export async function fetchUserRole(uid: string): Promise<UserRole> {
       const data = snap.data();
       if (data.role === 'admin') return 'admin';
     }
-  } catch (e) {
-    console.warn('Could not fetch user role, defaulting to student:', e);
+  } catch (e: any) {
+    if (e?.code !== 'unavailable') {
+      console.warn('Could not fetch user role, defaulting to student:', e?.message || e);
+    }
   }
   return 'student';
 }
@@ -276,17 +320,15 @@ export async function fetchUserRole(uid: string): Promise<UserRole> {
 /** Subscribe to live community events for a specific college (e.g. SIES_GST) */
 export function subscribeToCommunityEvents(
   college: string = 'SIES_GST',
-  onUpdate: (events: CommunityEvent[]) => void,
+  onUpdate: (events: CommunityEvent[], fromCache?: boolean) => void,
   onError?: (err: Error) => void
 ): Unsubscribe {
   const db = getDb();
-  const q = query(
-    collection(db, 'communityEvents'),
-    orderBy('created_at', 'desc')
-  );
+  // Query collection directly without orderBy so documents missing created_at are never omitted
+  const colRef = collection(db, 'communityEvents');
 
   return onSnapshot(
-    q,
+    colRef,
     (snapshot) => {
       const list: CommunityEvent[] = [];
       snapshot.forEach((docSnap) => {
@@ -295,10 +337,20 @@ export function subscribeToCommunityEvents(
           list.push({ ...data, id: docSnap.id });
         }
       });
-      onUpdate(list);
+
+      // Sort in memory by created_at or event_start_date descending
+      list.sort((a, b) => {
+        const dateA = a.created_at || a.event_start_date || '';
+        const dateB = b.created_at || b.event_start_date || '';
+        return dateB.localeCompare(dateA);
+      });
+
+      onUpdate(list, snapshot.metadata.fromCache);
     },
     (error: FirestoreError) => {
-      console.warn('Community events subscription note:', error.message);
+      if (error.code !== 'unavailable') {
+        console.warn('Community events subscription note:', error.message);
+      }
       if (onError) onError(error);
     }
   );
@@ -453,6 +505,20 @@ export async function trackUserRegistration(uid: string): Promise<void> {
   }
 }
 
+/** Decrement user registration count in live platform stats when an account is deleted */
+export async function decrementUserRegistration(uid?: string): Promise<void> {
+  try {
+    const db = getDb();
+    const statsDoc = doc(db, 'public_stats', 'platform');
+    await updateDoc(statsDoc, {
+      totalUsers: increment(-1),
+      last_active: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.warn('Error decrementing platform user count:', e);
+  }
+}
+
 /** Save or clear Expo push token for a user in Firestore (/users/{uid}) */
 export async function saveUserPushToken(
   uid: string,
@@ -470,6 +536,23 @@ export async function saveUserPushToken(
       pushTokenUpdatedAt: pushToken ? now : null,
       college: college || 'SIES_GST',
       updated_at: now,
+    },
+    { merge: true }
+  );
+}
+
+/** Update user's displayName in Firestore (/users/{uid}) */
+export async function updateUserDisplayNameInFirestore(
+  uid: string,
+  displayName: string
+): Promise<void> {
+  const db = getDb();
+  const userDoc = doc(db, 'users', uid);
+  await setDoc(
+    userDoc,
+    {
+      displayName,
+      updated_at: new Date().toISOString(),
     },
     { merge: true }
   );
@@ -499,3 +582,142 @@ export async function broadcastCommunityPushNotification(
 
   return (await response.json()) as BroadcastNotificationResponse;
 }
+
+/** Send targeted manual reminder or promotional push notification to attendees who saved an event */
+export async function sendEventAttendeeReminder(
+  workerUrl: string,
+  idToken: string,
+  payload: EventAttendeeReminderRequest
+): Promise<EventAttendeeReminderResponse> {
+  const url = `${workerUrl.replace(/\/$/, '')}/api/admin/event-reminder`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = (await response.json().catch(() => ({ error: 'Reminder dispatch failed' }))) as any;
+    throw new Error(errorData.message || errorData.error || `Reminder dispatch failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as EventAttendeeReminderResponse;
+}
+
+export interface InAppNotification {
+  id: string;
+  title: string;
+  message: string;
+  eventId?: string;
+  type?: string;
+  createdAt: string;
+  read?: boolean;
+  college?: string;
+}
+
+/** Subscribe in real-time to campus announcements for a college (e.g. SIES_GST) */
+export function subscribeCollegeAnnouncements(
+  college: string = 'SIES_GST',
+  onUpdate: (announcements: InAppNotification[]) => void,
+  onError?: (err: FirestoreError) => void
+): Unsubscribe {
+  const db = getDb();
+  const annCol = collection(db, 'collegeAnnouncements');
+  const q = query(annCol, orderBy('createdAt', 'desc'), limit(50));
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: InAppNotification[] = [];
+      snap.forEach((docSnap) => {
+        const d = docSnap.data();
+        if (college && d.college && d.college !== college) return;
+        items.push({
+          id: d.id || docSnap.id,
+          title: d.title || 'Campus Update',
+          message: d.message || '',
+          eventId: d.eventId,
+          type: d.type || 'community_event',
+          createdAt: d.createdAt || new Date().toISOString(),
+          college: d.college || college,
+        });
+      });
+      onUpdate(items);
+    },
+    (err) => {
+      if (onError) onError(err);
+    }
+  );
+}
+
+/** Subscribe in real-time to a user's private notification subcollection (/users/{uid}/notifications) */
+export function subscribeUserPrivateNotifications(
+  uid: string,
+  onUpdate: (notifications: InAppNotification[]) => void,
+  onError?: (err: FirestoreError) => void
+): Unsubscribe {
+  const db = getDb();
+  const notifCol = collection(db, 'users', uid, 'notifications');
+  const q = query(notifCol, orderBy('createdAt', 'desc'), limit(25));
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: InAppNotification[] = [];
+      snap.forEach((docSnap) => {
+        const d = docSnap.data();
+        items.push({
+          id: d.id || docSnap.id,
+          title: d.title || 'Notification',
+          message: d.message || '',
+          eventId: d.eventId,
+          type: d.type || 'event_reminder',
+          createdAt: d.createdAt || new Date().toISOString(),
+          read: d.read || false,
+        });
+      });
+      onUpdate(items);
+    },
+    (err) => {
+      if (onError) onError(err);
+    }
+  );
+}
+
+/** Publish a college announcement directly from admin client */
+export async function saveCollegeAnnouncement(
+  announcement: {
+    college: string;
+    title: string;
+    message: string;
+    eventId?: string;
+    type?: string;
+    adminUid?: string;
+  }
+): Promise<void> {
+  const db = getDb();
+  const announceId = `announce_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const annDoc = doc(db, 'collegeAnnouncements', announceId);
+  await setDoc(annDoc, {
+    id: announceId,
+    college: announcement.college || 'SIES_GST',
+    title: announcement.title,
+    message: announcement.message,
+    eventId: announcement.eventId || null,
+    type: announcement.type || 'community_event',
+    createdAt: new Date().toISOString(),
+    adminUid: announcement.adminUid || null,
+  });
+}
+
+/** Mark user private notification as read */
+export async function markNotificationAsRead(uid: string, notificationId: string): Promise<void> {
+  const db = getDb();
+  const notifDoc = doc(db, 'users', uid, 'notifications', notificationId);
+  await updateDoc(notifDoc, { read: true }).catch(() => {});
+}
+

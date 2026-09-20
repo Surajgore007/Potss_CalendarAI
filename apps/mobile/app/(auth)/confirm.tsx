@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,17 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SidebarRail } from '../../src/components/SidebarRail';
 import { EditableEventCard } from '../../src/components/EditableEventCard';
 import { GlassCard } from '../../src/components/ui/GlassCard';
 import { GlassButton } from '../../src/components/ui/GlassButton';
 import { GlassLoadingOverlay } from '../../src/components/ui/GlassLoadingOverlay';
+import { FeedbackModal } from '../../src/components/FeedbackModal';
 import { useEvents } from '../../src/context/EventsContext';
 import { useAuth } from '../../src/context/AuthContext';
 import {
@@ -24,6 +26,7 @@ import {
   validateEventForSave,
   batchPublishCommunityEvents,
   broadcastCommunityPushNotification,
+  saveCollegeAnnouncement,
 } from '@eventpulse/shared';
 import { colors, radii, shadows } from '../../src/theme/tokens';
 
@@ -36,6 +39,46 @@ export default function ConfirmScreen() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [destination, setDestination] = useState<PublishDestination>('personal');
   const [notifyStudents, setNotifyStudents] = useState<boolean>(true);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+
+  // Discard handler when navigating away with pending extractions
+  const handleDiscardBack = useCallback(() => {
+    if (pendingExtractions.length > 0) {
+      Alert.alert(
+        'Discard Extracted Events?',
+        'You have unsaved extracted events. Are you sure you want to go back? Unsaved events will be discarded.',
+        [
+          { text: 'Keep Reviewing', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              setPendingExtractions([]);
+              router.back();
+            },
+          },
+        ]
+      );
+    } else {
+      router.back();
+    }
+  }, [pendingExtractions.length, router, setPendingExtractions]);
+
+  // Intercept Android hardware back button
+  useFocusEffect(
+    useCallback(() => {
+      const onHardwareBack = () => {
+        if (pendingExtractions.length > 0) {
+          handleDiscardBack();
+          return true;
+        }
+        return false;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+      return () => subscription.remove();
+    }, [pendingExtractions.length, handleDiscardBack])
+  );
 
   const handleUpdateEvent = (index: number, updated: ExtractedEvent) => {
     setPendingExtractions((prev) => {
@@ -84,29 +127,36 @@ export default function ConfirmScreen() {
               const workerUrl =
                 process.env.EXPO_PUBLIC_WORKER_URL ||
                 process.env.EXPO_PUBLIC_API_URL ||
-                'https://eventpulse-api.surajgore.workers.dev';
+                'https://vanko-api.vanko-app.workers.dev';
               if (token) {
                 await broadcastCommunityPushNotification(workerUrl, token, {
                   eventId: published[0].id,
-                  title: item.title,
-                  body: `New ${item.type || 'event'} added to SIES GST feed!`,
+                  title: `New Event: ${item.title}`,
+                  body: `A new event has been published to the campus community feed! Tap to view details.`,
                   eventType: item.type,
                 });
+                await saveCollegeAnnouncement({
+                  college: 'SIES_GST',
+                  title: `📢 New Event: ${item.title}`,
+                  message: `A new event has been published to the campus community feed! Tap to view details.`,
+                  eventId: published[0].id,
+                  type: item.type,
+                  adminUid: user.uid,
+                }).catch(() => {});
               }
-            } catch (pushErr) {
-              console.warn('Push broadcast notice:', pushErr);
+            } catch {
+              // Push broadcast notice — safe fallback
             }
           }
         } catch (commErr: any) {
-          console.error('Community publish failed:', commErr);
           const isPermissionErr =
             commErr?.code === 'permission-denied' ||
             commErr?.message?.includes('permission');
           Alert.alert(
             isPermissionErr ? 'Admin Privileges Required' : 'Community Feed Notice',
             isPermissionErr
-              ? 'Publishing to SIES GST Community Feed requires your Firestore account (/users/{uid}) to have role: "admin". Event was saved to your personal calendar.'
-              : `Could not publish to campus feed: ${commErr?.message || 'Please try again'}`
+              ? 'Publishing to SIES GST Community Feed requires your account to have admin privileges. Event was saved to your personal calendar.'
+              : 'Could not publish to campus feed. Please check your connection and try again.'
           );
         }
       }
@@ -118,8 +168,7 @@ export default function ConfirmScreen() {
         }
         return next;
       });
-    } catch (err: any) {
-      console.error('Save single event failed:', err);
+    } catch {
       setSaveError('Could not save event. Please check your connection and try again.');
     } finally {
       setIsSaving(false);
@@ -156,40 +205,52 @@ export default function ConfirmScreen() {
               const workerUrl =
                 process.env.EXPO_PUBLIC_WORKER_URL ||
                 process.env.EXPO_PUBLIC_API_URL ||
-                'https://eventpulse-api.surajgore.workers.dev';
+                'https://vanko-api.vanko-app.workers.dev';
               if (token) {
                 const mainEvent = published[0];
                 const title =
-                  published.length > 1 ? `${published.length} New Events Added!` : mainEvent.title;
+                  published.length > 1
+                    ? `${published.length} New Events Added to SIES GST!`
+                    : `New Event: ${mainEvent.title}`;
+                const bodyText =
+                  published.length > 1
+                    ? `${published.length} new events have been posted to the campus feed. Tap to check your schedule!`
+                    : `A new event has been added to SIES GST! Tap to view details and save to your schedule.`;
                 await broadcastCommunityPushNotification(workerUrl, token, {
                   eventId: mainEvent.id,
                   title,
-                  body: `New events added to SIES GST campus feed. Tap to view!`,
+                  body: bodyText,
                   eventType: mainEvent.type,
                 });
+                await saveCollegeAnnouncement({
+                  college: 'SIES_GST',
+                  title: `📢 ${title}`,
+                  message: bodyText,
+                  eventId: mainEvent.id,
+                  type: mainEvent.type,
+                  adminUid: user.uid,
+                }).catch(() => {});
               }
-            } catch (pushErr) {
-              console.warn('Push broadcast notice:', pushErr);
+            } catch {
+              // Push broadcast notice — safe fallback
             }
           }
         } catch (commErr: any) {
-          console.error('Batch community publish failed:', commErr);
           const isPermissionErr =
             commErr?.code === 'permission-denied' ||
             commErr?.message?.includes('permission');
           Alert.alert(
             isPermissionErr ? 'Admin Privileges Required' : 'Community Feed Notice',
             isPermissionErr
-              ? 'Publishing to SIES GST Community Feed requires your Firestore account (/users/{uid}) to have role: "admin". Events have been saved to your personal calendar.'
-              : `Could not publish to campus feed: ${commErr?.message || 'Please try again'}`
+              ? 'Publishing to SIES GST Community Feed requires your account to have admin privileges. Events have been saved to your personal calendar.'
+              : 'Could not publish to campus feed. Please check your connection and try again.'
           );
         }
       }
 
       setPendingExtractions([]);
       router.replace((destination === 'community' ? '/(auth)/college' : '/(auth)') as any);
-    } catch (err: any) {
-      console.error('Save all events failed:', err);
+    } catch {
       setSaveError('Could not save events. Please check your connection and try again.');
     } finally {
       setIsSaving(false);
@@ -205,9 +266,9 @@ export default function ConfirmScreen() {
         visible={isSaving}
         message={
           destination === 'community'
-            ? 'Publishing to SIES GST Feed...'
+            ? 'Publishing to Campus Community Feed...'
             : destination === 'both'
-            ? 'Saving to Calendar & SIES GST Feed...'
+            ? 'Saving to Calendar & Community Feed...'
             : 'Saving to your private calendar...'
         }
       />
@@ -226,7 +287,7 @@ export default function ConfirmScreen() {
           <GlassCard contentStyle={styles.headerCard}>
             <TouchableOpacity
               style={styles.backBtn}
-              onPress={() => router.back()}
+              onPress={handleDiscardBack}
               activeOpacity={0.7}
             >
               <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
@@ -325,7 +386,7 @@ export default function ConfirmScreen() {
             <GlassButton
               title={
                 destination === 'community'
-                  ? `Publish ${count === 1 ? 'Event' : `All ${count} Events`} to SIES GST`
+                  ? `Publish ${count === 1 ? 'Event' : `All ${count} Events`} to Community Feed`
                   : destination === 'both'
                   ? `Save & Publish ${count === 1 ? 'Event' : `All ${count} Events`}`
                   : `Save ${count === 1 ? 'Event' : `All ${count} Events`} to Calendar`
@@ -353,9 +414,24 @@ export default function ConfirmScreen() {
             >
               <Text style={styles.discardText} numberOfLines={1}>Discard All</Text>
             </TouchableOpacity>
+
+            {/* Google Play Generative AI Policy: In-App Reporting for AI-Extracted Content */}
+            <TouchableOpacity
+              style={styles.reportAiBtn}
+              onPress={() => setShowFeedbackModal(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="flag-outline" size={12} color={colors.textTertiary} />
+              <Text style={styles.reportAiText}>Report Inaccurate or Inappropriate AI Content</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </View>
+
+      <FeedbackModal
+        visible={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -533,5 +609,18 @@ const styles = StyleSheet.create({
   checkboxCircleActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
+  },
+  reportAiBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  reportAiText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textTertiary,
   },
 });

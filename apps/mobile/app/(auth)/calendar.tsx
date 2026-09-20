@@ -23,6 +23,7 @@ import {
   formatFriendlyDate,
   getTodayISODate,
 } from '@eventpulse/shared';
+import { ManualEventModal } from '../../src/components/ManualEventModal';
 
 export default function CalendarScreen() {
   const router = useRouter();
@@ -31,6 +32,7 @@ export default function CalendarScreen() {
   const [viewMode, setViewMode] = useState<'timeline' | 'month' | 'agenda'>('month');
   const [currentMonthDate, setCurrentMonthDate] = useState<Date>(new Date());
   const [selectedDayISO, setSelectedDayISO] = useState<string>(getTodayISODate());
+  const [showManualModal, setShowManualModal] = useState(false);
 
   const handleDeleteEvent = (eventId: string, eventTitle: string) => {
     Alert.alert('Delete Event', `Are you sure you want to remove "${eventTitle}"?`, [
@@ -86,13 +88,18 @@ export default function CalendarScreen() {
 
       const dayEvents = activeEvents.filter((e) => {
         if (!e.event_start_date) return false;
-        if (e.event_start_date === iso) return true;
-        if (e.event_end_date && e.event_start_date <= iso && e.event_end_date >= iso) {
+        const start = e.event_start_date.slice(0, 10);
+        const end = e.event_end_date ? e.event_end_date.slice(0, 10) : start;
+        if (start === iso) return true;
+        if (start <= iso && end >= iso) {
           return true;
         }
         return false;
       });
-      const dayDeadlines = activeEvents.filter((e) => e.registration_deadline === iso);
+      const dayDeadlines = activeEvents.filter((e) => {
+        if (!e.registration_deadline) return false;
+        return e.registration_deadline.slice(0, 10) === iso;
+      });
 
       days.push({
         dayNum: d,
@@ -119,13 +126,18 @@ export default function CalendarScreen() {
     const active = events.filter((e) => e.status !== 'skipped');
     const dayEvents = active.filter((e) => {
       if (!e.event_start_date) return false;
-      if (e.event_start_date === selectedDayISO) return true;
-      if (e.event_end_date && e.event_start_date <= selectedDayISO && e.event_end_date >= selectedDayISO) {
+      const start = e.event_start_date.slice(0, 10);
+      const end = e.event_end_date ? e.event_end_date.slice(0, 10) : start;
+      if (start === selectedDayISO) return true;
+      if (start <= selectedDayISO && end >= selectedDayISO) {
         return true;
       }
       return false;
     });
-    const dayDeadlines = active.filter((e) => e.registration_deadline === selectedDayISO);
+    const dayDeadlines = active.filter((e) => {
+      if (!e.registration_deadline) return false;
+      return e.registration_deadline.slice(0, 10) === selectedDayISO;
+    });
     return { dayEvents, dayDeadlines };
   }, [selectedDayISO, events]);
 
@@ -161,8 +173,9 @@ export default function CalendarScreen() {
 
             <TouchableOpacity
               style={styles.addEventBtn}
-              onPress={() => router.push('/extract')}
+              onPress={() => setShowManualModal(true)}
               activeOpacity={0.8}
+              accessibilityLabel="Add event manually"
             >
               <Ionicons name="add" size={20} color="#FFFFFF" />
             </TouchableOpacity>
@@ -403,11 +416,11 @@ export default function CalendarScreen() {
                       >
                         <View style={styles.agendaDateCol}>
                           <Text style={styles.agendaDateDay}>
-                            {ev.event_start_date ? ev.event_start_date.split('-')[2] : '--'}
+                            {ev.event_start_date ? ev.event_start_date.slice(0, 10).split('-')[2] : '--'}
                           </Text>
                           <Text style={styles.agendaDateMonth}>
                             {ev.event_start_date
-                              ? new Date(ev.event_start_date).toLocaleDateString('en-US', { month: 'short' })
+                              ? new Date(ev.event_start_date.slice(0, 10)).toLocaleDateString('en-US', { month: 'short' })
                               : ''}
                           </Text>
                         </View>
@@ -428,6 +441,12 @@ export default function CalendarScreen() {
           )}
         </ScrollView>
       </View>
+
+      <ManualEventModal
+        visible={showManualModal}
+        onClose={() => setShowManualModal(false)}
+        initialDate={selectedDayISO}
+      />
     </SafeAreaView>
   );
 }
@@ -446,7 +465,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
-    paddingBottom: 48,
+    paddingBottom: 110,
     gap: 14,
   },
   navBar: {

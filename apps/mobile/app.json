@@ -24,6 +24,7 @@
     },
     "android": {
       "package": "com.suraj.eventpulse",
+      "versionCode": 1,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon/vanko-adaptive-foreground.png",
@@ -162,6 +163,19 @@
           "icon": "./assets/notification-icon.png",
           "color": "#3B82F6",
           "sounds": []
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0",
+            "minSdkVersion": 24,
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
         }
       ]
     ],

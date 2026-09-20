@@ -20,6 +20,7 @@ import {
   ExtractionQuotaInfo,
   SAMPLE_WHATSAPP_MESSAGES,
 } from '@eventpulse/shared';
+import { ManualEventModal } from '../../src/components/ManualEventModal';
 import { useEvents } from '../../src/context/EventsContext';
 import { useAuth } from '../../src/context/AuthContext';
 import { SidebarRail } from '../../src/components/SidebarRail';
@@ -41,6 +42,7 @@ export default function ExtractStudioScreen() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [quotaInfo, setQuotaInfo] = useState<ExtractionQuotaInfo | null>(null);
+  const [showManualModal, setShowManualModal] = useState(false);
 
   // Load quota stats on mount
   const refreshQuota = useCallback(async () => {
@@ -93,7 +95,7 @@ export default function ExtractStudioScreen() {
     }
 
     if (!isAdmin && quotaInfo && quotaInfo.remaining <= 0) {
-      setErrorMsg("You've used today's 3 extractions. New ones unlock tomorrow.");
+      setErrorMsg(`You've used today's ${quotaInfo.daily_quota ?? 3} extractions. New ones unlock tomorrow.`);
       return;
     }
 
@@ -134,7 +136,6 @@ export default function ExtractStudioScreen() {
       setIsExtracting(false);
       router.push('/(auth)/confirm');
     } catch (err: any) {
-      console.error('Extraction failed:', err);
       setIsExtracting(false);
       if (err.code === 'QUOTA_EXCEEDED' || err.status === 429) {
         // Use server-returned quota if available, avoid hardcoded values
@@ -149,11 +150,11 @@ export default function ExtractStudioScreen() {
           });
         }
       } else if (err.code === 'UNAUTHORIZED' || err.status === 401) {
-        setErrorMsg(err.message || 'Session expired or not signed in. Please sign in to use AI extraction.');
+        setErrorMsg('Your session has expired. Please sign in again to use AI extraction.');
       } else if (err.code === 'TIMEOUT' || err.status === 408) {
         setErrorMsg('Extraction timed out. Please try with a slightly shorter text.');
       } else {
-        setErrorMsg(err.message || 'Failed to extract schedule. Please check your connection and try again.');
+        setErrorMsg('Could not extract events from this text. Please check your connection and try again.');
       }
     }
   };
@@ -241,14 +242,30 @@ export default function ExtractStudioScreen() {
               </View>
             </GlassCard>
 
-            {/* Quota Exhausted Banner */}
+            {/* Quota Exhausted Banner & Manual Fallback Option */}
             {isQuotaExhausted && (
-              <View style={styles.quotaBanner}>
-                <Ionicons name="information-circle-outline" size={18} color={colors.textPrimary} />
-                <Text style={styles.quotaBannerText}>
-                  You've used today's 3 extractions. New ones unlock tomorrow.
-                </Text>
-              </View>
+              <GlassCard contentStyle={styles.quotaExhaustedCard}>
+                <View style={styles.quotaExhaustedTop}>
+                  <View style={styles.quotaExhaustedIconBox}>
+                    <Ionicons name="sparkles" size={18} color={colors.primary} />
+                  </View>
+                  <View style={styles.quotaExhaustedTexts}>
+                    <Text style={styles.quotaExhaustedTitle}>Daily AI Limit Reached</Text>
+                    <Text style={styles.quotaExhaustedSub}>
+                      You've used today's {quotaInfo?.daily_quota ?? 3} automated extractions. Quota resets tomorrow at midnight.
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.quotaManualActionBtn}
+                  onPress={() => setShowManualModal(true)}
+                  activeOpacity={0.85}
+                  accessibilityLabel="Add event manually"
+                >
+                  <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.quotaManualActionBtnText}>Add Event Manually (Unlimited)</Text>
+                </TouchableOpacity>
+              </GlassCard>
             )}
 
             {/* Sample Selector Pills */}
@@ -325,19 +342,48 @@ export default function ExtractStudioScreen() {
               </View>
             )}
 
-            {/* Primary Action Button */}
-            <GlassButton
-              title={isQuotaExhausted ? 'Daily Limit Reached' : 'Extract Schedule'}
-              variant="primary"
-              onPress={handleExtract}
-              loading={isExtracting}
-              disabled={rawText.trim().length === 0 || isQuotaExhausted}
-              icon={<Ionicons name="sparkles-outline" size={16} color="#FFFFFF" />}
-              style={styles.extractButton}
-            />
+            {/* Primary Action Button or Quota Fallback */}
+            {isQuotaExhausted ? (
+              <TouchableOpacity
+                style={styles.quotaManualActionBtn}
+                onPress={() => setShowManualModal(true)}
+                activeOpacity={0.85}
+                accessibilityLabel="Add event manually"
+              >
+                <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.quotaManualActionBtnText}>Add Event Manually (Unlimited)</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                <GlassButton
+                  title="Extract Schedule"
+                  variant="primary"
+                  onPress={handleExtract}
+                  loading={isExtracting}
+                  disabled={rawText.trim().length === 0}
+                  icon={<Ionicons name="sparkles-outline" size={16} color="#FFFFFF" />}
+                  style={styles.extractButton}
+                />
+                <TouchableOpacity
+                  style={styles.manualEntryLink}
+                  onPress={() => setShowManualModal(true)}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Enter event details manually"
+                >
+                  <Ionicons name="create-outline" size={15} color={colors.textSecondary} />
+                  <Text style={styles.manualEntryLinkText}>Or enter event details manually</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+
+      <ManualEventModal
+        visible={showManualModal}
+        onClose={() => setShowManualModal(false)}
+        onEventCreated={(id) => router.push(`/event/${id}`)}
+      />
     </SafeAreaView>
   );
 }
@@ -359,7 +405,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 110,
     gap: 14,
     maxWidth: 720,
     alignSelf: 'center',
@@ -465,6 +511,70 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
     lineHeight: 16,
+  },
+  quotaExhaustedCard: {
+    padding: 16,
+    gap: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(234, 88, 12, 0.25)',
+  },
+  quotaExhaustedTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  quotaExhaustedIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  quotaExhaustedTexts: {
+    flex: 1,
+    gap: 4,
+  },
+  quotaExhaustedTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    lineHeight: 18,
+  },
+  quotaExhaustedSub: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
+  },
+  quotaManualActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderRadius: radii.control,
+    gap: 8,
+    ...shadows.subtle,
+  },
+  quotaManualActionBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  manualEntryLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    gap: 6,
+  },
+  manualEntryLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   headerTitle: {
     fontSize: 20,

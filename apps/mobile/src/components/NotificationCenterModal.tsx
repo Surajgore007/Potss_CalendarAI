@@ -12,19 +12,29 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../context/AuthContext';
 import {
   CalendarEvent,
   formatFriendlyDate,
   formatTime12Hour,
   getDaysDifference,
   EVENT_TYPE_CONFIG,
+  subscribeCollegeAnnouncements,
+  subscribeUserPrivateNotifications,
+  markNotificationAsRead,
+  InAppNotification,
 } from '@eventpulse/shared';
 import { colors, radii, shadows } from '../theme/tokens';
+import { FeedbackItem } from './AdminFeedbackModal';
 
 const STORAGE_KEY_DISMISSED = '@vanko_dismissed_alerts_v1';
+const WORKER_BASE_URL =
+  process.env.EXPO_PUBLIC_WORKER_URL ||
+  process.env.EXPO_PUBLIC_API_URL ||
+  'https://vanko-api.vanko-app.workers.dev';
 
 export type AlertSeverity = 'urgent' | 'warning' | 'info' | 'danger';
-export type AlertCategory = 'all' | 'urgent' | 'deadlines' | 'events' | 'clashes';
+export type AlertCategory = 'all' | 'announcements' | 'urgent' | 'deadlines' | 'events' | 'clashes' | 'messages';
 
 export interface ComputedAlert {
   id: string; // unique key e.g. `${eventId}_deadline_2h_${dateStr}`
@@ -34,12 +44,15 @@ export interface ComputedAlert {
   body: string;
   timeDisplay: string;
   severity: AlertSeverity;
-  category: 'deadlines' | 'events' | 'clashes';
+  category: 'announcements' | 'deadlines' | 'events' | 'clashes';
   icon: string;
   iconColor: string;
   iconBg: string;
   timestampSort: number; // ms for sorting
   isUrgent: boolean;
+  isAnnouncement?: boolean;
+  isAdminFeedback?: boolean;
+  type?: string;
 }
 
 interface NotificationCenterModalProps {
@@ -48,6 +61,8 @@ interface NotificationCenterModalProps {
   events: CalendarEvent[];
   clashes?: any[];
   onUnreadCountChange?: (count: number) => void;
+  onOpenAdminFeedback?: () => void;
+  onOpenUserFeedback?: () => void;
 }
 
 /**
@@ -87,10 +102,16 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   events,
   clashes = [],
   onUnreadCountChange,
+  onOpenAdminFeedback,
+  onOpenUserFeedback,
 }) => {
   const router = useRouter();
+  const { user, isAdmin, getIdToken } = useAuth();
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   const [activeFilter, setActiveFilter] = useState<AlertCategory>('all');
+  const [collegeAnnouncements, setCollegeAnnouncements] = useState<InAppNotification[]>([]);
+  const [userNotifications, setUserNotifications] = useState<InAppNotification[]>([]);
+  const [adminFeedbacks, setAdminFeedbacks] = useState<FeedbackItem[]>([]);
 
   // Load dismissed alert IDs from persistent storage
   useEffect(() => {
@@ -106,11 +127,203 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
       .catch(() => { });
   }, []);
 
+  // Real-time Firestore subscriptions for campus announcements and private reminders
+  useEffect(() => {
+    const unsubAnnouncements = subscribeCollegeAnnouncements(
+      'SIES_GST',
+      (items) => {
+        setCollegeAnnouncements(items);
+      },
+      () => {
+        // Safe fallback on subscription error
+      }
+    );
+
+    let unsubUserNotifs: (() => void) | undefined;
+    if (user?.uid) {
+      unsubUserNotifs = subscribeUserPrivateNotifications(
+        user.uid,
+        (items) => {
+          setUserNotifications(items);
+        },
+        () => {
+          // Safe fallback
+        }
+      );
+    }
+
+    return () => {
+      unsubAnnouncements();
+      if (unsubUserNotifs) unsubUserNotifs();
+    };
+  }, [user?.uid]);
+
+  // Periodic & visibility-triggered fetch for Admin Feedback Messages
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    let isMounted = true;
+    const fetchAdminFeedbacks = async () => {
+      try {
+        const idToken = await getIdToken();
+        if (!idToken) return;
+        const res = await fetch(`${WORKER_BASE_URL}/api/admin/feedback`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (res.ok && isMounted) {
+          const data = (await res.json()) as any;
+          setAdminFeedbacks(data.feedback || []);
+        }
+      } catch {
+        // Safe fallback
+      }
+    };
+
+    fetchAdminFeedbacks();
+    const interval = setInterval(fetchAdminFeedbacks, 45000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [isAdmin, getIdToken, visible]);
+
   // Compute live intelligent alerts based on real dates and times
   const allAlerts = useMemo<ComputedAlert[]>(() => {
     const now = new Date();
     const nowMs = now.getTime();
     const list: ComputedAlert[] = [];
+
+    // 0. SIES GST Campus Announcements & Admin Broadcasts
+    collegeAnnouncements.forEach((ann) => {
+      const createdMs = ann.createdAt ? new Date(ann.createdAt).getTime() : nowMs;
+      const diffMs = nowMs - createdMs;
+      const diffMins = Math.max(0, Math.floor(diffMs / (1000 * 60)));
+      const diffHours = Math.floor(diffMins / 60);
+      let timeDisplay = 'Just now';
+      if (diffMins < 1) {
+        timeDisplay = 'Just now';
+      } else if (diffMins < 60) {
+        timeDisplay = `${diffMins}m ago`;
+      } else if (diffHours < 24) {
+        timeDisplay = `${diffHours}h ago`;
+      } else {
+        timeDisplay = formatFriendlyDate(ann.createdAt.slice(0, 10), false);
+      }
+
+      list.push({
+        id: ann.id,
+        eventId: ann.eventId || '',
+        title: ann.title,
+        headline: 'Campus Announcement',
+        body: ann.message,
+        timeDisplay,
+        severity: 'info',
+        category: 'announcements',
+        icon: 'megaphone',
+        iconColor: '#4F46E5',
+        iconBg: '#EEF2FF',
+        timestampSort: createdMs,
+        isUrgent: false,
+        isAnnouncement: true,
+      });
+    });
+
+    // 0b. Targeted Event Reminders & Developer Responses for User
+    userNotifications.forEach((notif) => {
+      const createdMs = notif.createdAt ? new Date(notif.createdAt).getTime() : nowMs;
+      const diffMs = nowMs - createdMs;
+      const diffMins = Math.max(0, Math.floor(diffMs / (1000 * 60)));
+      const diffHours = Math.floor(diffMins / 60);
+      let timeDisplay = 'Just now';
+      if (diffMins < 1) {
+        timeDisplay = 'Just now';
+      } else if (diffMins < 60) {
+        timeDisplay = `${diffMins}m ago`;
+      } else if (diffHours < 24) {
+        timeDisplay = `${diffHours}h ago`;
+      } else {
+        timeDisplay = formatFriendlyDate(notif.createdAt.slice(0, 10), false);
+      }
+
+      const isAdminReply = notif.type === 'admin_reply';
+
+      list.push({
+        id: notif.id,
+        eventId: notif.eventId || '',
+        title: notif.title || (isAdminReply ? 'Response to your feedback' : 'Event Reminder'),
+        headline: isAdminReply ? 'Developer Response' : 'Event Reminder',
+        body: notif.message,
+        timeDisplay,
+        severity: isAdminReply ? 'info' : 'urgent',
+        category: 'announcements',
+        icon: isAdminReply ? 'chatbubble-ellipses' : 'notifications',
+        iconColor: isAdminReply ? '#6366F1' : '#EA580C',
+        iconBg: isAdminReply ? '#EEF2FF' : '#FFEDD5',
+        timestampSort: createdMs,
+        isUrgent: true,
+        isAnnouncement: true,
+        type: notif.type,
+      });
+    });
+
+    // 0c. Admin Inbound User Feedback / Messages (Admin-Only)
+    if (isAdmin && adminFeedbacks.length > 0) {
+      const pendingFeedbacks = adminFeedbacks.filter((f) => !f.adminReply);
+      pendingFeedbacks.forEach((fb) => {
+        const createdMs = fb.createdAt ? new Date(fb.createdAt).getTime() : nowMs;
+        const diffMs = nowMs - createdMs;
+        const diffMins = Math.max(0, Math.floor(diffMs / (1000 * 60)));
+        const diffHours = Math.floor(diffMins / 60);
+        let timeDisplay = 'Just now';
+        if (diffMins < 1) {
+          timeDisplay = 'Just now';
+        } else if (diffMins < 60) {
+          timeDisplay = `${diffMins}m ago`;
+        } else if (diffHours < 24) {
+          timeDisplay = `${diffHours}h ago`;
+        } else if (fb.createdAt) {
+          timeDisplay = formatFriendlyDate(fb.createdAt.slice(0, 10), false);
+        } else {
+          timeDisplay = 'Recently';
+        }
+
+        const senderName =
+          fb.email && fb.email !== 'anonymous'
+            ? fb.email.split('@')[0]
+            : 'Student';
+        const categoryLabel =
+          fb.category === 'bug'
+            ? 'Bug Report'
+            : fb.category === 'suggestion'
+            ? 'Suggestion'
+            : fb.category === 'complaint'
+            ? 'Complaint'
+            : 'Message';
+
+        list.push({
+          id: `admin_fb_${fb.id}`,
+          eventId: '',
+          title: `${categoryLabel} from ${senderName}`,
+          headline: 'User Message / Report',
+          body: fb.message,
+          timeDisplay,
+          severity: fb.category === 'bug' ? 'danger' : 'urgent',
+          category: 'announcements',
+          icon:
+            fb.category === 'bug'
+              ? 'bug'
+              : fb.category === 'complaint'
+              ? 'alert-circle'
+              : 'chatbubbles',
+          iconColor: fb.category === 'bug' ? '#DC2626' : '#6366F1',
+          iconBg: fb.category === 'bug' ? '#FEF2F2' : '#EEF2FF',
+          timestampSort: createdMs,
+          isUrgent: true,
+          isAnnouncement: true,
+          isAdminFeedback: true,
+        });
+      });
+    }
 
     events.forEach((item) => {
       if (item.status === 'skipped') return;
@@ -305,14 +518,29 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
       }
     });
 
-    // Sort by timestamp urgency
-    return list.sort((a, b) => a.timestampSort - b.timestampSort);
-  }, [events, clashes]);
+    // Sort intelligently: urgent alerts on top, followed by fresh announcements (newest first), then upcoming deadlines/events
+    return list.sort((a, b) => {
+      if (a.isUrgent !== b.isUrgent) {
+        return a.isUrgent ? -1 : 1;
+      }
+      if (a.isAnnouncement && b.isAnnouncement) {
+        return b.timestampSort - a.timestampSort;
+      }
+      if (a.isAnnouncement && !b.isUrgent) return -1;
+      if (b.isAnnouncement && !a.isUrgent) return 1;
+      return a.timestampSort - b.timestampSort;
+    });
+  }, [events, clashes, collegeAnnouncements, userNotifications, adminFeedbacks, isAdmin]);
 
   // Active un-dismissed alerts
   const activeAlerts = useMemo(() => {
     return allAlerts.filter((a) => !dismissedIds.includes(a.id));
   }, [allAlerts, dismissedIds]);
+
+  // Count active announcements
+  const announcementsCount = useMemo(() => {
+    return activeAlerts.filter((a) => a.category === 'announcements').length;
+  }, [activeAlerts]);
 
   // Notify parent of active unread count
   useEffect(() => {
@@ -321,9 +549,16 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     }
   }, [activeAlerts.length, onUnreadCountChange]);
 
+  // Count active messages
+  const messagesCount = useMemo(() => {
+    return activeAlerts.filter((a) => a.isAdminFeedback || a.type === 'admin_reply').length;
+  }, [activeAlerts]);
+
   // Filtered list according to tab
   const filteredAlerts = useMemo(() => {
     if (activeFilter === 'all') return activeAlerts;
+    if (activeFilter === 'announcements') return activeAlerts.filter((a) => a.category === 'announcements');
+    if (activeFilter === 'messages') return activeAlerts.filter((a) => a.isAdminFeedback || a.type === 'admin_reply');
     if (activeFilter === 'urgent') return activeAlerts.filter((a) => a.isUrgent);
     if (activeFilter === 'deadlines') return activeAlerts.filter((a) => a.category === 'deadlines');
     if (activeFilter === 'events') return activeAlerts.filter((a) => a.category === 'events');
@@ -335,6 +570,9 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   const handleDismissSingle = async (alertId: string) => {
     const updated = [...dismissedIds, alertId];
     setDismissedIds(updated);
+    if (user?.uid) {
+      markNotificationAsRead(user.uid, alertId).catch(() => {});
+    }
     try {
       await AsyncStorage.setItem(STORAGE_KEY_DISMISSED, JSON.stringify(updated));
     } catch { }
@@ -345,15 +583,44 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     const allIds = allAlerts.map((a) => a.id);
     const merged = Array.from(new Set([...dismissedIds, ...allIds]));
     setDismissedIds(merged);
+    if (user?.uid) {
+      userNotifications.forEach((n) => markNotificationAsRead(user.uid, n.id).catch(() => {}));
+    }
     try {
       await AsyncStorage.setItem(STORAGE_KEY_DISMISSED, JSON.stringify(merged));
     } catch { }
   };
 
-  const handleNavigate = (eventId: string) => {
-    if (!eventId) return;
+  const handleNavigate = (alert: ComputedAlert) => {
     onClose();
-    router.push(`/event/${eventId}`);
+    if (user?.uid && alert.id && !alert.isAdminFeedback) {
+      markNotificationAsRead(user.uid, alert.id).catch(() => {});
+    }
+
+    if (alert.isAdminFeedback && onOpenAdminFeedback) {
+      setTimeout(() => {
+        onOpenAdminFeedback();
+      }, 150);
+      return;
+    }
+
+    if (alert.type === 'admin_reply' && onOpenUserFeedback) {
+      setTimeout(() => {
+        onOpenUserFeedback();
+      }, 150);
+      return;
+    }
+
+    if (alert.eventId) {
+      const isPersonal = events.some((e) => e.id === alert.eventId);
+      if (isPersonal) {
+        router.push(`/event/${alert.eventId}`);
+      } else {
+        router.push('/(auth)/college' as any);
+      }
+    } else {
+      router.push('/(auth)/college' as any);
+    }
   };
 
   return (
@@ -420,6 +687,38 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                       </Text>
                     </TouchableOpacity>
 
+                    {announcementsCount > 0 && (
+                      <TouchableOpacity
+                        style={[styles.filterChip, activeFilter === 'announcements' && styles.filterChipActive]}
+                        onPress={() => setActiveFilter('announcements')}
+                      >
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            activeFilter === 'announcements' && styles.filterChipTextActive,
+                          ]}
+                        >
+                          📢 Announcements ({announcementsCount})
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {messagesCount > 0 && (
+                      <TouchableOpacity
+                        style={[styles.filterChip, activeFilter === 'messages' && styles.filterChipActive]}
+                        onPress={() => setActiveFilter('messages')}
+                      >
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            activeFilter === 'messages' && styles.filterChipTextActive,
+                          ]}
+                        >
+                          💬 Messages ({messagesCount})
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
                     <TouchableOpacity
                       style={[styles.filterChip, activeFilter === 'urgent' && styles.filterChipActive]}
                       onPress={() => setActiveFilter('urgent')}
@@ -480,7 +779,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                           alert.severity === 'danger' && styles.alertCardDanger,
                           alert.severity === 'urgent' && styles.alertCardUrgent,
                         ]}
-                        onPress={() => handleNavigate(alert.eventId)}
+                        onPress={() => handleNavigate(alert)}
                         activeOpacity={0.85}
                       >
                         <View style={[styles.typeIndicator, { backgroundColor: alert.iconBg }]}>

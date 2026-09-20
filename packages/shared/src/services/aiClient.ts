@@ -35,7 +35,7 @@ export async function extractEventsFromText(
     options?.workerUrl ||
     (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_WORKER_URL) ||
     (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) ||
-    'https://eventpulse-api.surajgore.workers.dev';
+    'https://vanko-api.vanko-app.workers.dev';
 
   if (!workerUrl) {
     throw new AIClientError(
@@ -190,7 +190,7 @@ export async function getExtractionQuota(
     options?.workerUrl ||
     (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_WORKER_URL) ||
     (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) ||
-    'https://eventpulse-api.surajgore.workers.dev';
+    'https://vanko-api.vanko-app.workers.dev';
 
   const endpoint = workerUrl.endsWith('/api/quota')
     ? workerUrl

@@ -20,6 +20,7 @@ export interface HeaderProps {
   title?: string;
   subtitle?: string;
   showBack?: boolean;
+  onBack?: () => void;
   rightAction?: React.ReactNode;
   activeTab?: 'dashboard' | 'events' | 'deadlines' | 'clashes';
   onTabChange?: (tab: 'dashboard' | 'events' | 'deadlines' | 'clashes') => void;
@@ -32,6 +33,7 @@ export const Header: React.FC<HeaderProps> = ({
   title,
   subtitle,
   showBack = false,
+  onBack,
   rightAction,
   activeTab = 'dashboard',
   onTabChange,
@@ -45,16 +47,18 @@ export const Header: React.FC<HeaderProps> = ({
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
   const [showNotifications, setShowNotifications] = useState(false);
+  const [liveAlertCount, setLiveAlertCount] = useState<number | null>(null);
 
-  // Count active urgent deadlines (<=2d) and upcoming events (<=7d)
+  // Count active urgent deadlines (<=2d), upcoming events (<=7d), and campus announcements
   const alertCount = useMemo(() => {
+    if (liveAlertCount !== null) return liveAlertCount;
     return events.filter((e) => {
       if (e.status === 'skipped') return false;
       const dlDiff = e.registration_deadline ? getDaysDifference(e.registration_deadline) : -1;
       const evDiff = e.event_start_date ? getDaysDifference(e.event_start_date) : -1;
       return (dlDiff >= 0 && dlDiff <= 2) || (evDiff >= 0 && evDiff <= 7);
     }).length;
-  }, [events]);
+  }, [events, liveAlertCount]);
 
   // Simple title bar mode (for detail & sub screens)
   if (title) {
@@ -64,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
           {showBack && (
             <TouchableOpacity
               style={styles.backBtn}
-              onPress={() => router.back()}
+              onPress={() => (onBack ? onBack() : router.back())}
               activeOpacity={0.7}
             >
               <Ionicons name="chevron-back" size={20} color="#334155" />
@@ -161,6 +165,7 @@ export const Header: React.FC<HeaderProps> = ({
         visible={showNotifications}
         onClose={() => setShowNotifications(false)}
         events={events}
+        onUnreadCountChange={setLiveAlertCount}
       />
 
       {/* Search Input Bar */}

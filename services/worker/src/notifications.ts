@@ -19,13 +19,29 @@ export interface ExpoPushTicket {
   details?: { error?: string };
 }
 
-/** Fetch user role and college securely from Firestore via Service Account OAuth2 token */
+/**
+ * Fetch user role and college.
+ * Primary source of truth: Cryptographically signed Custom Claims from verified token.
+ * Fallback: Firestore document lookup if custom claims are not present.
+ */
 export async function getUserProfile(
-  uid: string,
+  userOrUid:
+    | { uid: string; isAdmin?: boolean; role?: 'admin' | 'student'; college?: string }
+    | string,
   env: Env
 ): Promise<{ role: 'admin' | 'student'; college: string; missingSecrets?: boolean }> {
+  // 1. Fast-path: Rely on Custom Claims directly from the verified token
+  if (typeof userOrUid === 'object' && userOrUid.isAdmin !== undefined) {
+    return {
+      role: userOrUid.isAdmin ? 'admin' : (userOrUid.role || 'student'),
+      college: userOrUid.college || 'General',
+    };
+  }
+
+  const uid = typeof userOrUid === 'object' ? userOrUid.uid : userOrUid;
+
   if (!env.FIREBASE_CLIENT_EMAIL || !env.FIREBASE_PRIVATE_KEY) {
-    return { role: 'student', college: 'SIES_GST', missingSecrets: true };
+    return { role: 'student', college: 'General', missingSecrets: true };
   }
 
   const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_PROJECT_ID;
@@ -40,15 +56,15 @@ export async function getUserProfile(
     if (res.ok) {
       const doc = (await res.json()) as any;
       const role = doc?.fields?.role?.stringValue === 'admin' ? 'admin' : 'student';
-      const college = doc?.fields?.college?.stringValue || 'SIES_GST';
+      const college = doc?.fields?.college?.stringValue || 'General';
       return { role, college };
     }
-  } catch (err) {
-    console.warn(`Authenticated profile lookup failed for ${uid}:`, err);
+  } catch {
+    // Authenticated profile lookup failed — fall back gracefully
   }
 
   // Fallback default
-  return { role: 'student', college: 'SIES_GST' };
+  return { role: 'student', college: 'General' };
 }
 
 /** Check if broadcast was already sent for this eventId (One-broadcast-per-event semantic) */
@@ -73,8 +89,8 @@ export async function checkBroadcastIdempotency(
         timestamp: doc?.fields?.timestamp?.stringValue || doc?.createTime,
       };
     }
-  } catch (err) {
-    console.warn('Idempotency check warning:', err);
+  } catch {
+    // Idempotency check error — allow retry
   }
 
   return { alreadyBroadcast: false };
@@ -120,8 +136,50 @@ export async function recordBroadcastHistory(
         },
       }),
     });
-  } catch (err) {
-    console.error('Failed to record broadcast history:', err);
+  } catch {
+    // History recording failed — continue gracefully
+  }
+}
+
+/** Save campus announcement in Firestore /collegeAnnouncements/{announceId} */
+export async function saveCollegeAnnouncementRecord(
+  eventId: string,
+  adminUid: string,
+  college: string,
+  title: string,
+  message: string,
+  eventType: string,
+  env: Env
+): Promise<void> {
+  const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_PROJECT_ID;
+  const announceId = `announce_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  try {
+    const accessToken = await getGoogleFirestoreAccessToken(env);
+    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/collegeAnnouncements/${announceId}`;
+    const now = new Date().toISOString();
+
+    await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fields: {
+          id: { stringValue: announceId },
+          college: { stringValue: college || 'SIES_GST' },
+          title: { stringValue: title },
+          message: { stringValue: message },
+          eventId: { stringValue: eventId },
+          type: { stringValue: eventType || 'community_event' },
+          createdAt: { stringValue: now },
+          adminUid: { stringValue: adminUid },
+        },
+      }),
+    });
+  } catch {
+    // Announcement recording failed — continue gracefully
   }
 }
 
@@ -159,8 +217,6 @@ export async function queryCollegePushTokens(
     });
 
     if (!res.ok) {
-      const errText = await res.text();
-      console.error('Firestore token query failed:', errText);
       return [];
     }
 
@@ -180,8 +236,8 @@ export async function queryCollegePushTokens(
         recipients.push({ uid, pushToken });
       }
     }
-  } catch (err) {
-    console.error('Error querying college push tokens:', err);
+  } catch {
+    // Token query failed
   }
 
   return recipients;
@@ -214,8 +270,8 @@ export async function pruneDeadTokens(
         }),
       });
     }
-  } catch (err) {
-    console.warn('Dead token pruning warning:', err);
+  } catch {
+    // Dead token pruning failed — safe to ignore
   }
 }
 
@@ -264,8 +320,8 @@ export async function sendExpoPushBatches(
           });
         }
       }
-    } catch (err) {
-      console.error('Expo batch send error:', err);
+    } catch {
+      // Expo batch delivery failed
     }
   }
 

@@ -21,7 +21,10 @@
     "postinstall": "npm --workspace=packages/shared run build && node scripts/patch-rn.js",
     "typecheck": "npm --workspace=packages/shared run typecheck && npm --workspace=apps/mobile run typecheck",
     "test:rules": "node scripts/test_firestore_rules.mjs",
-    "test:rules:emulator": "firebase-tools emulators:exec --only firestore \"node scripts/test_firestore_rules.mjs\""
+    "test:rules:emulator": "firebase-tools emulators:exec --only firestore \"node scripts/test_firestore_rules.mjs\"",
+    "android": "npm --workspace=apps/mobile run android",
+    "ios": "npm --workspace=apps/mobile run ios",
+    "build:apk": "cd apps/mobile/android && .\\gradlew assembleDebug && powershell -Command \"Copy-Item app/build/outputs/apk/debug/app-debug.apk ../../../Vanko-v1.0.apk -Force\""
   },
   "devDependencies": {
     "@babel/plugin-transform-class-properties": "^7.29.7",
@@ -38,6 +41,7 @@
     "is-arrayish": "^0.3.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "expo": "~54.0.37"
   }
 }

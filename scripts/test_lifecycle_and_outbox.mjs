@@ -4,6 +4,7 @@ import {
   isDeadlineActive,
   getUrgencyInfo,
   parseDateTime,
+  detectClashes,
 } from '../packages/shared/dist/utils/dateUtils.js';
 import { generateEventId } from '../packages/shared/dist/services/firestore.js';
 
@@ -144,4 +145,33 @@ assert.equal(queue[1].eventId, realId, 'Subsequent delete write must have remapp
 assert.equal(queue[2].eventId, 'local_temp_100', 'Unrelated item must preserve its eventId');
 console.log('✔ Test 5 passed: Outbox queue atomically reconciles temporary IDs to canonical Firestore IDs');
 
-console.log('\n🎉 ALL LIFECYCLE, OUTBOX, & DEADLINE TESTS PASSED SUCCESSFULLY!\n');
+// Test 6: Passed Date Conflict Expiration (detectClashes)
+console.log('\n--- Test Suite 6: Passed Date Conflict Expiration (detectClashes) ---');
+
+// Case 6A: Two past events on the same date (2026-09-10, refDate is 2026-09-12)
+const pastClashA = { id: 'c1', title: 'Old Hackathon A', event_start_date: '2026-09-10', status: 'upcoming' };
+const pastClashB = { id: 'c2', title: 'Old Hackathon B', event_start_date: '2026-09-10', status: 'upcoming' };
+const pastClashes = detectClashes([pastClashA, pastClashB], refDate);
+assert.equal(pastClashes.length, 0, 'Past events on the same day must NOT produce an active clash');
+console.log('✔ Case 6A passed: Historical/passed event dates produce 0 conflicts');
+
+// Case 6B: One past event and one future event
+const futureClashA = { id: 'c3', title: 'Future Conf A', event_start_date: '2026-09-15', status: 'upcoming' };
+const mixedClashes = detectClashes([pastClashA, futureClashA], refDate);
+assert.equal(mixedClashes.length, 0, 'Past event vs future event must NOT produce a clash');
+console.log('✔ Case 6B passed: Past event vs future event produces 0 conflicts');
+
+// Case 6C: Two upcoming events on the same day (2026-09-15)
+const futureClashB = { id: 'c4', title: 'Future Conf B', event_start_date: '2026-09-15', status: 'upcoming' };
+const activeClashes = detectClashes([futureClashA, futureClashB], refDate);
+assert.equal(activeClashes.length, 1, 'Upcoming events on the same day must produce 1 conflict');
+assert.equal(activeClashes[0].reason, 'same_day_event');
+console.log('✔ Case 6C passed: Upcoming events on the same day produce active conflict');
+
+// Case 6D: Advancing reference date past the event date causes the conflict to automatically expire
+const laterDate = new Date(2026, 8, 16, 0, 0, 0); // 2026-09-16 (day after 2026-09-15)
+const expiredClashes = detectClashes([futureClashA, futureClashB], laterDate);
+assert.equal(expiredClashes.length, 0, 'Conflict must automatically expire and drop to 0 once the date passes');
+console.log('✔ Case 6D passed: Conflict automatically drops to 0 once event date passes');
+
+console.log('\n🎉 ALL LIFECYCLE, OUTBOX, DEADLINE, & CLASH EXPIRATION TESTS PASSED SUCCESSFULLY!\n');

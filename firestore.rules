@@ -4,9 +4,14 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function isPlatformAdmin() {
-      return request.auth != null
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return request.auth != null && (
+        (request.auth.token.admin == true) ||
+        (request.auth.token.role == 'admin') ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        )
+      );
     }
 
     match /users/{userId} {
@@ -52,6 +57,15 @@ service cloud.firestore {
         allow delete: if request.auth != null
           && request.auth.uid == userId
           && ownsEvent(resource.data);
+      }
+
+      // User private notifications & targeted event reminders
+      match /notifications/{notificationId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow update: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow delete: if request.auth != null && request.auth.uid == userId;
+        allow write: if isPlatformAdmin();
       }
     }
 
@@ -113,6 +127,32 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 3. College announcements / broadcast notifications for campus
+    match /collegeAnnouncements/{announcementId} {
+      allow read: if request.auth != null;
+      allow write: if isPlatformAdmin();
+    }
+
+    // Feedback submissions: strictly worker (service account) only. Client SDK has zero read or write.
+    match /feedback/{docId} {
+      allow read, write: if false;
+    }
+
+    // Public web & in-app account deletion requests: worker (service account) only.
+    match /deletionRequests/{docId} {
+      allow read, write: if false;
+    }
+
+    // Email OTP verification codes for deletion: worker (service account) only.
+    match /deletionVerificationCodes/{docId} {
+      allow read, write: if false;
+    }
+
+    // Deletion audit ledger: worker only (strictly minimized, 90-day retention with expireAt TTL field).
+    match /accountDeletionAudit/{docId} {
+      allow read, write: if false;
+    }
+
     match /public_stats/{statId} {
       allow read: if true;
       allow create: if isPlatformAdmin() || (
@@ -123,7 +163,10 @@ service cloud.firestore {
       allow update: if isPlatformAdmin() || (
         request.auth != null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalUsers', 'last_active'])
-        && request.resource.data.totalUsers == resource.data.totalUsers + 1
+        && (
+          request.resource.data.totalUsers == resource.data.totalUsers + 1 ||
+          request.resource.data.totalUsers == resource.data.totalUsers - 1
+        )
       );
       allow delete: if isPlatformAdmin();
     }
