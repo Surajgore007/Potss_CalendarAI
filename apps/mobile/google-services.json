@@ -1,0 +1,63 @@
+{
+  "project_info": {
+    "project_number": "922680174583",
+    "project_id": "calendarai-f5cd0",
+    "storage_bucket": "calendarai-f5cd0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:922680174583:android:15a5c7d2872c9c731fb0f2",
+        "android_client_info": {
+          "package_name": "com.suraj.eventpulse"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "922680174583-9cgn3ap0ok33vtodu190aprpnrtb4nmm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.suraj.eventpulse",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "922680174583-j1a2rpqst7da4g5t4lp9su29q4ukn2p2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.suraj.eventpulse",
+            "certificate_hash": "1fc8ecec6a66b6df6d6577af764b788cb7f0009c"
+          }
+        },
+        {
+          "client_id": "922680174583-mg99l29nrd5gadjqk5nvi1gu0tplvk2a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.suraj.eventpulse",
+            "certificate_hash": "1114c7e4a5e4bf633c0b270bda3ef95ecf3aca2c"
+          }
+        },
+        {
+          "client_id": "922680174583-moi8a65hp2ji4345pco5fvt7tum49f7r.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD41L6CdPjUdXc82DW8119-GyVO7gXYHSw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "922680174583-moi8a65hp2ji4345pco5fvt7tum49f7r.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

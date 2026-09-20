@@ -24,7 +24,6 @@
     },
     "android": {
       "package": "com.suraj.eventpulse",
-      "versionCode": 1,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon/vanko-adaptive-foreground.png",

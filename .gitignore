@@ -26,7 +26,8 @@ serviceAccountKey.json
 *adminsdk*.json
 *-firebase-adminsdk-*.json
 calendarai-*.json
-google-services.json
+# google-services.json is safe client config needed by EAS Build
+!apps/mobile/google-services.json
 GoogleService-Info.plist
 
 # IDE & OS
