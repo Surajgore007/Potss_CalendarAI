@@ -14,7 +14,7 @@ Use this document to answer the **Data Safety** section in Google Play Console w
 
 | Question | Answer | Notes |
 | :--- | :--- | :--- |
-| Does your app collect or share any of the required user data types? | **Yes** | Collects user email, name, calendar events, device push tokens, and feedback. Shares calendar text with AI service provider (Groq) for entity extraction, and shares attendee UIDs with other campus community members when joining public events. |
+| Does your app collect or share any of the required user data types? | **Yes** | Collects user email, name, calendar events, device push tokens, and feedback. Shares calendar text with AI service provider (Groq) for entity extraction. |
 | Is all of the user data collected by your app encrypted in transit? | **Yes** | Enforces TLS 1.3 across all client-to-edge and database connections. |
 | Do you provide a way for users to request that their data be deleted? | **Yes** | Available in-app (*Settings > Delete My Account*) and via public web portal (`/delete-account`). |
 | Enter URL for deletion request: | `https://vanko-api.vanko-app.workers.dev/delete-account` | Public, responsive web page with email OTP verification. |
@@ -45,12 +45,12 @@ Use this document to answer the **Data Safety** section in Google Play Console w
 
 #### 3. User IDs (Firebase UID)
 - **Collected?** Yes
-- **Shared?** Yes
-- **Shared With:** Other users on the platform (Campus community members)
+- **Shared?** No (Firebase UIDs are strictly internal to Vanko and never transferred to external third parties, ad networks, or data brokers. In-app attendee visibility between fellow students on public community events is an internal first-party feature, which Google Play explicitly excludes from third-party sharing)
 - **Purposes:**
-  - App functionality (Access control, data isolation, displaying attendee status/previews when a user joins a public community event)
-- **Ephemeral?** No (Stored in community event document until user cancels attendance or deletes account; attendee UIDs are purged upon account deletion)
-- **Optional or Required?** Optional for sharing (User UID is only shared if the user explicitly chooses to join a public community event; otherwise remains private)
+  - App functionality (Access control, account security, data isolation, in-app event participation)
+  - Account management
+- **Ephemeral?** No (Stored until account deletion; attendee arrays are automatically purged upon deletion)
+- **Optional or Required?** Required (Core account identifier)
 
 ---
 
@@ -61,16 +61,16 @@ Use this document to answer the **Data Safety** section in Google Play Console w
 - **Shared?** Yes
 - **Shared With / Third Party:** AI service provider (Groq, Inc.)
 - **Purposes:**
-  - App functionality (AI schedule parsing, converting unstructured notices into calendar events, timetable synchronization, deadline reminders)
-- **Data Processing Terms (Play Store Compliance):**
-  - Processed statelessly in real-time solely for extraction of dates, times, and event titles
+  - App functionality (AI schedule extraction of dates, times, and titles from user notices; cloud timetable synchronization; deadline reminders)
+- **Data Processing Terms (Google Play Compliance):**
+  - Processed statelessly in real-time solely for schedule entity extraction
   - **Not sold** to data brokers or third parties
   - **Not used for advertising or marketing**
   - **No retention** beyond immediate inference request per commercial Data Processing Agreement (DPA)
   - **Never used to train** or fine-tune foundational AI models
-  - User credentials (email, password, phone) are **never sent** to Groq
-- **Ephemeral?** Stored in user's calendar until deleted by user (zero retention on AI provider side)
-- **Optional or Required?** Optional for AI extraction (Users can add events manually without using the AI feature); Required for storing saved schedule events
+  - User account credentials (email, password) are **never sent** to Groq
+- **Ephemeral?** **No** (Stored persistently in Firestore until deleted by user; no retention on AI provider side)
+- **Optional or Required?** Optional for AI extraction (Users can add events manually without using the AI feature); Required for saving calendar events
 
 ---
 
