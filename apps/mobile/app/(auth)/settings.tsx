@@ -266,7 +266,7 @@ export default function SettingsScreen() {
               <Text style={styles.grievanceText}>
                 Data Fiduciary: <Text style={styles.boldText}>Vanko</Text>{'\n'}
                 Support Desk: <Text style={styles.boldText}>Privacy & Data Protection</Text>{'\n'}
-                Contact: <Text style={styles.boldText}>Available on official website & in-app feedback</Text>
+                Contact: <Text style={styles.boldText}>supportvanko@gmail.com</Text>
               </Text>
             </View>
           </GlassCard>

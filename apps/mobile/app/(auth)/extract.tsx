@@ -373,6 +373,9 @@ export default function ExtractStudioScreen() {
                   <Ionicons name="create-outline" size={15} color={colors.textSecondary} />
                   <Text style={styles.manualEntryLinkText}>Or enter event details manually</Text>
                 </TouchableOpacity>
+                <Text style={styles.aiDisclaimer}>
+                  AI parses dates & times automatically. Always review extracted event details.
+                </Text>
               </>
             )}
           </ScrollView>
@@ -692,5 +695,12 @@ const styles = StyleSheet.create({
   },
   extractButton: {
     minHeight: 48,
+  },
+  aiDisclaimer: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    textAlign: 'center',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 });

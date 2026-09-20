@@ -51,7 +51,7 @@ Download Vanko today and take complete control of your college schedule!
 - **Secondary Category**: Productivity
 - **Tags**: `Calendar`, `Events`, `Productivity`, `College`, `Hackathons`
 - **Content Rating**: Everyone (PEGI 3 / ESRB Everyone)
-- **Support Email**: Your official support email (e.g., `support@eventpulse.com`)
+- **Support Email**: supportvanko@gmail.com
 - **Privacy Policy URL**: `https://yourdomain.com/privacy-policy` *(Content from `PRIVACY_POLICY.md`)*
 
 ---

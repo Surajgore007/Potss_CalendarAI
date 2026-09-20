@@ -65,7 +65,9 @@ export async function registerForPushNotificationsAsync(
     // 4. Always sync push token directly to current user's profile in Firestore (/users/{uid})
     await saveUserPushToken(uid, pushToken, college);
     await AsyncStorage.setItem(`${PUSH_TOKEN_STORAGE_KEY}_${uid}`, pushToken);
-    console.log('[Push] Registered Expo push token for UID:', uid, pushToken);
+    if (__DEV__) {
+      console.log('[Push] Registered Expo push token for UID:', uid, pushToken);
+    }
 
     return pushToken;
   } catch (err: any) {
@@ -87,7 +89,9 @@ export async function unregisterPushTokenAsync(uid: string): Promise<void> {
   if (Platform.OS === 'web') return;
 
   try {
-    await AsyncStorage.removeItem(PUSH_TOKEN_STORAGE_KEY);
+    // Remove the UID-scoped key that registerForPushNotificationsAsync writes.
+    // This ensures ManageConsentsModal reads the correct absent state on next open.
+    await AsyncStorage.removeItem(`${PUSH_TOKEN_STORAGE_KEY}_${uid}`);
     await saveUserPushToken(uid, null);
   } catch (err) {
     console.warn('Could not unregister push token:', err);

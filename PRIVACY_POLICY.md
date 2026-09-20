@@ -11,8 +11,8 @@
 This Privacy Policy governs the mobile application **Vanko**. Under the **Digital Personal Data Protection Act, 2023 (DPDP)**, the Data Fiduciary responsible for processing your personal data is:
 
 - **Data Fiduciary:** Vanko Data Governance & Privacy Desk
-- **Official Privacy Email:** [privacy@vanko.app](mailto:privacy@vanko.app)
-- **General Inquiries:** [privacy@vanko.app](mailto:privacy@vanko.app)
+- **Official Privacy Email:** [supportvanko@gmail.com](mailto:supportvanko@gmail.com)
+- **General Inquiries:** [supportvanko@gmail.com](mailto:supportvanko@gmail.com)
 - **In-App Redressal:** Settings > Send Feedback / Suggestion
 
 ---
@@ -68,7 +68,7 @@ To operate our cloud infrastructure, we partner with specialized, security-certi
 - **Target Audience:** Vanko is built for adult college/university students and working professionals (18+).
 - **Self-Declaration Gate:** During registration, all users must affirmatively declare that they are 18 years of age or older or an enrolled college student.
 - **Statutory Limitation Notice:** A self-declaration checkbox does not constitute verifiable parental consent under Section 9 of the DPDP Act 2023. Vanko does not knowingly collect personal data from children under 18 years of age or track child behaviors.
-- **Expedited Parental Removal:** If a parent or legal guardian discovers that a minor has registered without consent, they may contact our Grievance Officer at [grievance@eventpulse.app](mailto:grievance@eventpulse.app) with the minor's email. We will verify and permanently purge the account and all associated data within **24 hours**.
+- **Expedited Parental Removal:** If a parent or legal guardian discovers that a minor has registered without consent, they may contact our Grievance Officer at [supportvanko@gmail.com](mailto:supportvanko@gmail.com) with the minor's email. We will verify and permanently purge the account and all associated data within **24 hours**.
 
 ---
 
@@ -103,7 +103,7 @@ As a Data Principal under India's DPDP Act 2023, you enjoy full control over you
 If you have questions, feedback, or complaints regarding the processing of your personal data, you may contact our designated Grievance Desk:
 
 - **Department:** Vanko Privacy & Data Protection Office
-- **Official Grievance Email:** [privacy@vanko.app](mailto:privacy@vanko.app)
+- **Official Grievance Email:** [supportvanko@gmail.com](mailto:supportvanko@gmail.com)
 - **In-App Submission:** Settings > Send Feedback / Suggestion
 - **Compliance Standards:** Digital Personal Data Protection Act, 2023
 

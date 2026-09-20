@@ -308,6 +308,7 @@ export async function executeAccountDeletion(
   // (Skip if already completed in a previous attempt)
   const skipEvents =
     priorStatus === 'firestore_events_deleted' ||
+    priorStatus === 'community_attendance_cleared' ||
     priorStatus === 'firestore_profile_deleted' ||
     priorStatus === 'auth_deleted' ||
     priorStatus === 'failed_at_auth';
@@ -374,6 +375,107 @@ export async function executeAccountDeletion(
       await updateAudit('firestore_events_deleted');
     } catch (err: any) {
       console.warn('Error purging user events/notifications:', err);
+    }
+  }
+
+  // Stage 2b: Remove deleted user's UID from all communityEvents attendee arrays they joined.
+  // This prevents residual PII (UID) from persisting in public-readable community event documents
+  // after account erasure, which is required under DPDP Act data minimization principles.
+  const skipAttendance =
+    priorStatus === 'community_attendance_cleared' ||
+    priorStatus === 'firestore_profile_deleted' ||
+    priorStatus === 'auth_deleted' ||
+    priorStatus === 'failed_at_auth';
+
+  if (!skipAttendance) {
+    try {
+      // Query all communityEvents where this UID appears in the attendees array.
+      const queryUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+      const queryRes = await fetch(queryUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: 'communityEvents' }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: 'attendees' },
+                op: 'ARRAY_CONTAINS',
+                value: { stringValue: uid },
+              },
+            },
+            limit: 200,
+          },
+        }),
+      });
+
+      if (queryRes.ok) {
+        const results = (await queryRes.json()) as any[];
+        for (const item of results) {
+          if (!item.document) continue;
+          const docName = item.document.name;
+          const fields = item.document.fields || {};
+
+          // Build updated attendees array with UID removed
+          const existingAttendees: string[] = (
+            fields.attendees?.arrayValue?.values || []
+          )
+            .map((v: any) => v.stringValue)
+            .filter((v: string) => Boolean(v) && v !== uid);
+
+          // Build updated attendeePreviews map with UID key removed
+          const existingPreviews: Record<string, any> =
+            fields.attendeePreviews?.mapValue?.fields || {};
+          const updatedPreviewFields: Record<string, any> = {};
+          for (const [key, val] of Object.entries(existingPreviews)) {
+            if (key !== uid) {
+              updatedPreviewFields[key] = val;
+            }
+          }
+
+          // Decrement attendeesCount by 1 (floor at 0)
+          const currentCount: number =
+            parseInt(fields.attendeesCount?.integerValue || '0', 10);
+          const newCount = Math.max(0, currentCount - 1);
+
+          // PATCH only the three affected fields using field mask
+          const patchUrl =
+            `https://firestore.googleapis.com/v1/${docName}` +
+            `?updateMask.fieldPaths=attendees` +
+            `&updateMask.fieldPaths=attendeePreviews` +
+            `&updateMask.fieldPaths=attendeesCount`;
+
+          await fetch(patchUrl, {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              fields: {
+                attendees: {
+                  arrayValue: {
+                    values: existingAttendees.map((v) => ({ stringValue: v })),
+                  },
+                },
+                attendeePreviews: {
+                  mapValue: { fields: updatedPreviewFields },
+                },
+                attendeesCount: { integerValue: String(newCount) },
+              },
+            }),
+          });
+        }
+      }
+
+      await updateAudit('community_attendance_cleared');
+    } catch (err: any) {
+      // Non-fatal: log and continue. The profile and auth deletions must still
+      // proceed regardless. Reconciliation cron will retry on next run.
+      console.warn('Error purging community event attendance for uid:', uid, err);
     }
   }
 
@@ -723,7 +825,7 @@ export function renderPrivacyPolicyHtml(): string {
       <p>This privacy policy governs the <strong>Vanko</strong> mobile application. The Data Fiduciary responsible for your personal data under the <strong>Digital Personal Data Protection Act, 2023 (DPDP)</strong> is:</p>
       <ul>
         <li><strong>Data Fiduciary:</strong> Vanko Data Governance & Privacy Office</li>
-        <li><strong>Official Inquiries:</strong> <a href="mailto:privacy@vanko.app">privacy@vanko.app</a></li>
+        <li><strong>Official Inquiries:</strong> <a href="mailto:supportvanko@gmail.com">supportvanko@gmail.com</a></li>
       </ul>
     </section>
 
@@ -781,7 +883,7 @@ export function renderPrivacyPolicyHtml(): string {
       <p>Under Section 10 and Section 12 of the DPDP Act 2023, you may contact our designated Grievance & Privacy Desk regarding any data protection or privacy concern:</p>
       <div class="contact-box">
         <strong>Data Protection & Grievance Desk:</strong> Vanko Privacy Office<br>
-        <strong>Email:</strong> <a href="mailto:privacy@vanko.app">privacy@vanko.app</a><br>
+        <strong>Email:</strong> <a href="mailto:supportvanko@gmail.com">supportvanko@gmail.com</a><br>
         <strong>In-App Channel:</strong> Vanko App &gt; Settings &gt; Send Feedback / Suggestion
       </div>
     </section>
@@ -946,7 +1048,7 @@ export function renderDeleteAccountHtml(): string {
 
       <div class="footer-links">
         Still have the app installed? You can delete your account instantly under <em>Settings &gt; Delete My Account</em>.<br><br>
-        <a href="/privacy-policy">View Privacy Policy</a>
+        Need assistance? Contact <a href="mailto:supportvanko@gmail.com">supportvanko@gmail.com</a> · <a href="/privacy-policy">View Privacy Policy</a>
       </div>
     </div>
   </div>
@@ -1025,3 +1127,101 @@ export function renderDeleteAccountHtml(): string {
 </body>
 </html>`;
 }
+
+/**
+ * Dispatch 6-digit Account Deletion OTP via Brevo Transactional Email API.
+ */
+export async function sendDeletionOtpEmail(
+  apiKey: string,
+  toEmail: string,
+  otpCode: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': apiKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        sender: {
+          name: 'Vanko Privacy & Support',
+          email: 'supportvanko@gmail.com',
+        },
+        to: [{ email: toEmail }],
+        subject: `${otpCode} is your Vanko account deletion code`,
+        htmlContent: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Deletion Code</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0B0E14; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #E4E4E7;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #0B0E14; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 520px; background-color: #181B22; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; overflow: hidden; padding: 32px 28px;">
+          <tr>
+            <td align="left">
+              <div style="font-size: 20px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.5px; margin-bottom: 8px;">
+                Vanko
+              </div>
+              <div style="font-size: 13px; color: #71717A; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 24px;">
+                Data Protection & Erasure Desk
+              </div>
+              <h1 style="font-size: 22px; font-weight: 700; color: #F43F5E; margin: 0 0 16px 0;">
+                Account Deletion Request
+              </h1>
+              <p style="font-size: 14px; line-height: 1.6; color: #D4D4D8; margin: 0 0 24px 0;">
+                We received a request to permanently delete your Vanko account and all associated calendar, timetable, and profile data from our servers.
+              </p>
+              <div style="background: rgba(244, 63, 94, 0.08); border: 1px solid rgba(244, 63, 94, 0.25); border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: #FDA4AF; letter-spacing: 1px; margin-bottom: 8px;">
+                  Your 6-Digit Verification Code
+                </div>
+                <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #FFFFFF; font-family: monospace;">
+                  ${otpCode}
+                </div>
+                <div style="font-size: 12px; color: #A1A1AA; margin-top: 8px;">
+                  Expires in <strong>15 minutes</strong>
+                </div>
+              </div>
+              <p style="font-size: 13px; line-height: 1.6; color: #A1A1AA; margin: 0 0 20px 0;">
+                Enter this code on the <a href="https://vanko-api.vanko-app.workers.dev/delete-account" style="color: #60A5FA; text-decoration: none;">Web Deletion Portal</a> to confirm erasure. Once confirmed, this action cannot be undone.
+              </p>
+              <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 20px; margin-top: 20px;">
+                <p style="font-size: 12px; line-height: 1.5; color: #71717A; margin: 0;">
+                  ⚠️ <strong>Security Notice:</strong> If you did not request this deletion, someone may have entered your email by mistake. Your account remains completely secure — do not share this code with anyone.
+                </p>
+                <p style="font-size: 12px; line-height: 1.5; color: #71717A; margin: 12px 0 0 0;">
+                  Contact: <a href="mailto:supportvanko@gmail.com" style="color: #71717A;">supportvanko@gmail.com</a>
+                </p>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+        `,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[Brevo] Email dispatch failed (${res.status}): ${errText}`);
+      return { success: false, error: errText };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('[Brevo] Dispatch exception:', err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+

@@ -19,6 +19,7 @@ import {
   reconcileOrphanedDeletions,
   renderPrivacyPolicyHtml,
   renderDeleteAccountHtml,
+  sendDeletionOtpEmail,
 } from './compliance';
 
 export interface Env {
@@ -30,6 +31,7 @@ export interface Env {
   FIREBASE_PROJECT_ID?: string;
   FIREBASE_CLIENT_EMAIL?: string;
   FIREBASE_PRIVATE_KEY?: string;
+  BREVO_API_KEY?: string;
   ENVIRONMENT?: string;
   RATE_LIMIT_KV?: any;
   COOLDOWN_KV?: any;
@@ -1571,6 +1573,13 @@ export default {
               },
             }),
           });
+
+          // Dispatch verification code to user's inbox via Brevo transactional email
+          if (env.BREVO_API_KEY) {
+            await sendDeletionOtpEmail(env.BREVO_API_KEY, email, otp);
+          } else {
+            console.warn('[DeletionOTP] BREVO_API_KEY not configured — email dispatch skipped.');
+          }
         }
 
         // Always return the exact same generic message regardless of account existence

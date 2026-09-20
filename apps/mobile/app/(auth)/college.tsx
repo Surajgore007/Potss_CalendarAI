@@ -278,6 +278,9 @@ export default function CollegeFeedScreen() {
               <Text style={styles.headerSubtitle} numberOfLines={2}>
                 Curated hackathons, CTFs, and tech announcements for SIES GST students
               </Text>
+              <Text style={styles.disclaimerText}>
+                Unofficial student community feed · Not affiliated with or endorsed by SIES GST
+              </Text>
             </View>
 
             {isAdmin && (
@@ -299,7 +302,7 @@ export default function CollegeFeedScreen() {
           <Text style={styles.liveBannerText}>
             {communityEvents.length > 0
               ? isNetworkOnline
-                ? `${communityEvents.length} live event${communityEvents.length !== 1 ? 's' : ''} from SIES GST`
+                ? `${communityEvents.length} live event${communityEvents.length !== 1 ? 's' : ''} from campus admin`
                 : `${communityEvents.length} event${communityEvents.length !== 1 ? 's' : ''} (Offline Mode)`
               : isNetworkOnline
               ? 'Live feed — events posted here by admin'
@@ -653,6 +656,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 16,
     marginTop: 2,
+  },
+  disclaimerText: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+    marginTop: 4,
+    lineHeight: 14,
   },
   publishBtn: {
     flexDirection: 'row',

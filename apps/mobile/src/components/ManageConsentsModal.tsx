@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { unregisterPushTokenAsync, registerForPushNotificationsAsync } from '../services/pushNotificationService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GlassCard } from './ui/GlassCard';
 import { GlassButton } from './ui/GlassButton';
 import { colors, radii } from '../theme/tokens';
@@ -29,6 +30,23 @@ export function ManageConsentsModal({
   const { user } = useAuth();
   const [pushEnabled, setPushEnabled] = useState(true);
   const [isUpdatingPush, setIsUpdatingPush] = useState(false);
+
+  // Sync toggle state with the actually saved push token on every modal open.
+  // The storage key mirrors what registerForPushNotificationsAsync writes.
+  useEffect(() => {
+    if (!visible || !user?.uid) return;
+    const PUSH_TOKEN_KEY = `@vanko_cached_push_token_${user.uid}`;
+    AsyncStorage.getItem(PUSH_TOKEN_KEY)
+      .then((stored) => {
+        // Token present and non-empty means pushes are currently enabled.
+        setPushEnabled(typeof stored === 'string' && stored.length > 0);
+      })
+      .catch(() => {
+        // On read error keep the optimistic default (true) so the UX doesn't
+        // silently break — the real state will correct on next successful read.
+        setPushEnabled(true);
+      });
+  }, [visible, user?.uid]);
 
   const handleTogglePush = async (newValue: boolean) => {
     setPushEnabled(newValue);

@@ -2,7 +2,7 @@
 
 **Statutory Authority:** Rule 7, Digital Personal Data Protection Rules, 2025 & Section 8(6), DPDP Act 2023  
 **Application:** Vanko (EventPulse) — `com.suraj.eventpulse`  
-**Data Fiduciary:** Vanko Data Governance & Privacy Office (`privacy@vanko.app`)  
+**Data Fiduciary:** Vanko Data Governance & Privacy Office (`supportvanko@gmail.com`)  
 **Effective Date:** September 13, 2026  
 
 ---
@@ -29,7 +29,7 @@ Under Rule 7 of the DPDP Rules 2025, any personal data breach triggering a risk 
 
 ### Stage 1: Identification & Escalation (Hours 0–2)
 1. **Trigger Alert:** Detection of unauthorized access, database leakage, compromised service account credentials, or unusual API exfiltration patterns.
-2. **Escalate to Data Fiduciary:** Notify Vanko Security & Incident Lead (`privacy@vanko.app`) immediately.
+2. **Escalate to Data Fiduciary:** Notify Vanko Security & Incident Lead (`supportvanko@gmail.com`) immediately.
 3. **Open Incident Log:** Record initial discovery timestamp, reporter details, and suspected systems involved.
 
 ### Stage 2: Immediate Containment & Isolation (Hours 2–6)
@@ -44,7 +44,7 @@ Pursuant to DPDP Rule 7(1), submit initial notice to the **Data Protection Board
 - Categories of personal data involved (e.g., email addresses, calendar entries).
 - Immediate containment actions taken.
 - Recommended protective measures for affected users (e.g., password resets).
-- Dedicated point of contact: `grievance@eventpulse.app`.
+- Dedicated point of contact: `supportvanko@gmail.com`.
 
 ### Stage 4: Forensic Investigation & Remediation (Hours 12–48)
 1. **Audit Log Inspection:** Review Cloudflare Worker access logs and Google Cloud audit logs.
@@ -85,7 +85,7 @@ What You Should Do:
 1. As a precautionary measure, please update your account password.
 2. Be vigilant against suspicious or phishing emails purporting to be from campus organizations or event organizers.
 
-For inquiries or assistance, please contact our Privacy & Security Desk directly at privacy@vanko.app. We take the privacy of your data with utmost seriousness and deeply regret this incident.
+For inquiries or assistance, please contact our Privacy & Security Desk directly at supportvanko@gmail.com. We take the privacy of your data with utmost seriousness and deeply regret this incident.
  
 Sincerely,
 Vanko Data Protection & Security Team
