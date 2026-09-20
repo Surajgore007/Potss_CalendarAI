@@ -78,12 +78,12 @@ export function initFirebase(config?: Partial<FirebaseConfig>): { app: FirebaseA
   }
 
   const finalConfig: FirebaseConfig = {
-    apiKey: config?.apiKey || process.env.EXPO_PUBLIC_FIREBASE_API_KEY || '',
-    authDomain: config?.authDomain || process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
-    projectId: config?.projectId || process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || '',
-    storageBucket: config?.storageBucket || process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || '',
-    messagingSenderId: config?.messagingSenderId || process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
-    appId: config?.appId || process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '',
+    apiKey: config?.apiKey || process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyDH3quqTUCY5uwaoNw3TD_23ZcHDh2Jbx0',
+    authDomain: config?.authDomain || process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'calendarai-f5cd0.firebaseapp.com',
+    projectId: config?.projectId || process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'calendarai-f5cd0',
+    storageBucket: config?.storageBucket || process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'calendarai-f5cd0.firebasestorage.app',
+    messagingSenderId: config?.messagingSenderId || process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '922680174583',
+    appId: config?.appId || process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:922680174583:web:8e65caedb7103e721fb0f2',
   };
 
   firebaseApp = initializeApp(finalConfig);

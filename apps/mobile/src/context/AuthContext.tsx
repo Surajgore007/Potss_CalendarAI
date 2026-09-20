@@ -56,8 +56,8 @@ WebBrowser.maybeCompleteAuthSession();
 const AUTH_STORAGE_KEY = '@eventpulse_saved_user_profile';
 const EVENTS_CACHE_LATEST = '@vanko_cached_events_latest';
 
-const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
-const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '';
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '922680174583-moi8a65hp2ji4345pco5fvt7tum49f7r.apps.googleusercontent.com';
+const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '922680174583-j1a2rpqst7da4g5t4lp9su29q4ukn2p2.apps.googleusercontent.com';
 const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 
 interface AuthContextType {
