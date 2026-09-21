@@ -67,7 +67,7 @@ export async function getUserProfile(
   return { role: 'student', college: 'General' };
 }
 
-/** Check if broadcast was already sent for this eventId (One-broadcast-per-event semantic) */
+/** Check if broadcast was sent for this eventId within 60 seconds (Debounce double-click protection) */
 export async function checkBroadcastIdempotency(
   eventId: string,
   env: Env
@@ -84,10 +84,17 @@ export async function checkBroadcastIdempotency(
 
     if (res.ok) {
       const doc = (await res.json()) as any;
-      return {
-        alreadyBroadcast: true,
-        timestamp: doc?.fields?.timestamp?.stringValue || doc?.createTime,
-      };
+      const lastBroadcastTime = doc?.fields?.timestamp?.stringValue || doc?.createTime;
+      if (lastBroadcastTime) {
+        const diffMs = Date.now() - new Date(lastBroadcastTime).getTime();
+        // Debounce: prevent duplicate broadcast within 60 seconds (anti-double-click)
+        if (diffMs < 60_000) {
+          return {
+            alreadyBroadcast: true,
+            timestamp: lastBroadcastTime,
+          };
+        }
+      }
     }
   } catch {
     // Idempotency check error — allow retry

@@ -617,6 +617,8 @@ export default {
       }
     }
 
+
+
     // 3. Quota check endpoint (Read-only status for UI badge)
     if (request.method === 'GET' && (url.pathname === '/api/quota' || url.pathname === '/quota')) {
       try {
@@ -907,6 +909,8 @@ export default {
           title: `📢 ${adminCollege === 'SIES_GST' ? 'SIES GST' : adminCollege}: ${eventTitle}`,
           body: eventBody,
           channelId: 'sies-gst-announcements',
+          priority: 'high',
+          _displayInForeground: true,
           data: {
             type: 'community_event',
             eventId: body.eventId,
@@ -1085,6 +1089,7 @@ export default {
             body: reminderBody,
             channelId: 'sies-gst-announcements',
             priority: 'high',
+            _displayInForeground: true,
             data: {
               type: 'event_reminder',
               eventId: body.eventId,
