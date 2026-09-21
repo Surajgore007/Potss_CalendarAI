@@ -195,7 +195,7 @@ export async function queryCollegePushTokens(
     const accessToken = await getGoogleFirestoreAccessToken(env);
     const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
 
-    // Query users matching college filter
+    // Fetch active user records (up to 1000)
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -205,13 +205,7 @@ export async function queryCollegePushTokens(
       body: JSON.stringify({
         structuredQuery: {
           from: [{ collectionId: 'users' }],
-          where: {
-            fieldFilter: {
-              field: { fieldPath: 'college' },
-              op: 'EQUAL',
-              value: { stringValue: college },
-            },
-          },
+          limit: 1000,
         },
       }),
     });
@@ -228,12 +222,24 @@ export async function queryCollegePushTokens(
       const pushToken = doc.fields.pushToken?.stringValue;
       if (
         pushToken &&
-        (pushToken.startsWith('ExponentPushToken[') || pushToken.startsWith('ExpoPushToken['))
+        (pushToken.startsWith('ExponentPushToken[') ||
+          pushToken.startsWith('ExpoPushToken[') ||
+          pushToken.includes('PushToken['))
       ) {
-        // Extract UID from resource name: projects/.../databases/(default)/documents/users/{uid}
-        const pathParts = doc.name.split('/');
-        const uid = pathParts[pathParts.length - 1];
-        recipients.push({ uid, pushToken });
+        const userCollege = doc.fields.college?.stringValue;
+        // Tenant matching: If broadcast is for SIES_GST, include SIES_GST, General, or unset college.
+        // Prevent cross-college leakage: if user is explicitly registered with another college, exclude them.
+        const isMatch =
+          !college || college === 'SIES_GST'
+            ? !userCollege || userCollege === 'SIES_GST' || userCollege === 'General'
+            : userCollege === college;
+
+        if (isMatch) {
+          // Extract UID from resource name: projects/.../databases/(default)/documents/users/{uid}
+          const pathParts = doc.name.split('/');
+          const uid = pathParts[pathParts.length - 1];
+          recipients.push({ uid, pushToken });
+        }
       }
     }
   } catch {

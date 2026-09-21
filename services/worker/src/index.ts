@@ -267,12 +267,25 @@ async function verifyFirebaseToken(
       throw new Error('INVALID_UID');
     }
 
-    const isAdmin = payload.admin === true || payload.role === 'admin';
-    const role: 'admin' | 'student' = isAdmin ? 'admin' : 'student';
-    const college =
+    let isAdmin = payload.admin === true || payload.role === 'admin';
+    let role: 'admin' | 'student' = isAdmin ? 'admin' : 'student';
+    let college =
       typeof payload.college === 'string' && payload.college.trim()
         ? payload.college.trim()
         : 'SIES_GST';
+
+    // Single Source of Truth: Cryptographically signed Custom Claims on verified JWT.
+    // Fallback: If custom claims are not explicitly present on the token (legacy or newly created accounts),
+    // query Firestore /users/{uid} using the server's private Google Service Account.
+    if (!isAdmin && payload.admin === undefined && payload.role === undefined && payload.sub) {
+      const fsRole = await getUserRole(payload.sub, env);
+      if (fsRole === 'admin') {
+        isAdmin = true;
+        role = 'admin';
+        // Auto-provision the custom claim in the background so future JWTs have it natively
+        autoProvisionAdminClaims(payload.sub, college, env).catch(() => {});
+      }
+    }
 
     return {
       uid: payload.sub,
@@ -285,6 +298,44 @@ async function verifyFirebaseToken(
     };
   } catch (err: any) {
     throw new Error('INVALID_TOKEN');
+  }
+}
+
+/**
+ * Auto-provisions Firebase Auth custom claims { admin: true, role: 'admin', college }
+ * via Google Identity Toolkit REST API using the Worker's service account.
+ * Ensures that subsequent user token refreshes contain the cryptographically signed claims natively.
+ */
+async function autoProvisionAdminClaims(
+  uid: string,
+  college: string,
+  env: Env
+): Promise<void> {
+  if (!env.FIREBASE_CLIENT_EMAIL || !env.FIREBASE_PRIVATE_KEY) return;
+  try {
+    const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_PROJECT_ID;
+    const accessToken = await getGoogleFirestoreAccessToken(env);
+    const claimsPayload = JSON.stringify({
+      admin: true,
+      role: 'admin',
+      college: college || 'SIES_GST',
+    });
+    await fetch(
+      `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:setCustomUserClaims`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          localId: uid,
+          customAttributes: claimsPayload,
+        }),
+      }
+    );
+  } catch {
+    // Non-blocking background sync
   }
 }
 
