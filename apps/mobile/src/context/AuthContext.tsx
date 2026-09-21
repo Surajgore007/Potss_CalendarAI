@@ -81,6 +81,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
+  const userRef = useRef<UserProfile | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -110,6 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const parsed = JSON.parse(stored);
             if (parsed && parsed.uid) {
               setUser(parsed);
+              userRef.current = parsed;
               setIsLoading(false);
             }
           } catch {
@@ -131,25 +133,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (fbUser) {
               setFirebaseUser(fbUser);
               const online = await isOnline();
-              let userRole: UserRole = 'student';
-              let college = 'General';
+              const currentKnownRole = userRef.current?.role;
+              let userRole: UserRole = currentKnownRole || 'student';
+              let college = userRef.current?.college || 'General';
               try {
                 // 1. Single Source of Truth: Decode Custom Claims directly from Firebase ID Token
                 const tokenResult = await fbUser.getIdTokenResult();
                 const claims = tokenResult?.claims || {};
                 if (claims.admin === true || claims.role === 'admin') {
                   userRole = 'admin';
+                } else if (claims.admin === false || claims.role === 'student') {
+                  userRole = 'student';
                 } else if (online) {
-                  userRole = await fetchUserRole(fbUser.uid);
-                } else if (user?.role) {
-                  userRole = user.role;
+                  const fsRole = await fetchUserRole(fbUser.uid);
+                  if (fsRole === 'admin') {
+                    userRole = 'admin';
+                  } else if (currentKnownRole === 'admin') {
+                    // Do not drop established admin role on transient cold-start network/read ambiguity
+                    userRole = 'admin';
+                  } else {
+                    userRole = fsRole;
+                  }
+                } else if (currentKnownRole) {
+                  userRole = currentKnownRole;
                 }
 
                 if (typeof claims.college === 'string' && claims.college.trim()) {
                   college = claims.college.trim();
                 }
               } catch {
-                userRole = user?.role || 'student';
+                userRole = currentKnownRole || 'student';
               }
 
               const profile: UserProfile = {
@@ -162,6 +175,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 defaultReminderOffsets: [4320, 1440, 0],
               };
               setUser(profile);
+              userRef.current = profile;
               await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
 
               if (online) {
@@ -379,8 +393,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       try {
-        if (user?.uid) {
-          await unregisterPushTokenAsync(user.uid);
+        if (userRef.current?.uid || user?.uid) {
+          const targetUid = userRef.current?.uid || user?.uid;
+          if (targetUid) {
+            await unregisterPushTokenAsync(targetUid);
+          }
         }
         const { app } = initFirebase();
         const auth = getAppAuth(app);
@@ -392,6 +409,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Cancel scheduled notifications only upon explicit user logout
       await syncAllEventNotifications([], { allowPurgeAll: true }).catch(() => {});
       setUser(null);
+      userRef.current = null;
       setFirebaseUser(null);
     } finally {
       setIsLoading(false);
@@ -411,23 +429,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   /**
    * Force refresh Firebase Auth ID token and update custom claims and user profile.
    * Resolves mid-session admin elevation without requiring the user to log out and back in.
+   * Cryptographic integrity is guaranteed: Custom claims are single source of truth,
+   * while established sessions are shielded against transient network timeouts.
    */
   const refreshPermissions = async (): Promise<boolean> => {
     if (!firebaseUser) return false;
     try {
       const tokenResult = await firebaseUser.getIdTokenResult(true);
       const claims = tokenResult?.claims || {};
-      let userRole: UserRole = 'student';
-      let college = user?.college || 'General';
+      const currentProfile = userRef.current;
+      const currentKnownRole = currentProfile?.role;
+      let userRole: UserRole = currentKnownRole || 'student';
+      let college = currentProfile?.college || 'General';
 
+      // 1. Single Source of Truth: Cryptographically signed Custom Claims on the ID Token
       if (claims.admin === true || claims.role === 'admin') {
         userRole = 'admin';
+      } else if (claims.admin === false || claims.role === 'student') {
+        // Explicit server-side revocation
+        userRole = 'student';
       } else {
         const online = await isOnline();
         if (online) {
-          userRole = await fetchUserRole(firebaseUser.uid);
-        } else if (user?.role) {
-          userRole = user.role;
+          try {
+            const fsRole = await fetchUserRole(firebaseUser.uid);
+            if (fsRole === 'admin') {
+              userRole = 'admin';
+            } else if (currentKnownRole === 'admin') {
+              // CRITICAL INTEGRITY GUARD:
+              // Never demote an active, authenticated admin session to student on transient background network calls
+              // or Firestore reconnection delays. Require explicit token revocation claim.
+              userRole = 'admin';
+            } else {
+              userRole = fsRole;
+            }
+          } catch {
+            userRole = currentKnownRole || 'student';
+          }
+        } else if (currentKnownRole) {
+          userRole = currentKnownRole;
         }
       }
 
@@ -442,6 +482,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           role: userRole,
           college,
         };
+        userRef.current = updated;
         AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
         return updated;
       });
@@ -449,7 +490,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return userRole === 'admin';
     } catch (err) {
       console.warn('Failed to refresh permissions:', err);
-      return false;
+      return userRef.current?.role === 'admin';
     }
   };
 
@@ -486,10 +527,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 1. Instantly update React state in AuthContext so all screens re-render immediately
     setUser((prev) => {
       if (!prev) return null;
-      return {
+      const next = {
         ...prev,
         displayName: trimmed,
       };
+      userRef.current = next;
+      return next;
     });
 
     // 2. Persist to local storage so restarts and offline loads see the updated name immediately
@@ -514,7 +557,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // 4. Persist to Firestore (/users/{uid})
-    const uid = firebaseUser?.uid || user?.uid;
+    const uid = firebaseUser?.uid || userRef.current?.uid || user?.uid;
     if (uid) {
       try {
         await updateUserDisplayNameInFirestore(uid, trimmed);

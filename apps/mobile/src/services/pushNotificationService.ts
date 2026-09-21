@@ -71,12 +71,19 @@ export async function registerForPushNotificationsAsync(
 
     return pushToken;
   } catch (err: any) {
-    if (err?.message?.includes('Default FirebaseApp is not initialized')) {
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes('Default FirebaseApp is not initialized')) {
       console.info('[Push] Native FCM push registration requires native build with google-services.json.');
-    } else if (err?.message?.includes('Network request failed') || err?.name === 'TypeError') {
+    } else if (errMsg.includes('FIS_AUTH_ERROR') || errMsg.includes('FirebaseInstallations')) {
+      console.warn(
+        '[Push] Firebase Installations Authentication Error (FIS_AUTH_ERROR):\n' +
+        '-> Google Play re-signed your AAB release. Ensure the Google Play App Signing SHA-1 fingerprint\n' +
+        '   (Play Console -> App Integrity -> App signing) is added to your Firebase project settings.'
+      );
+    } else if (errMsg.includes('Network request failed') || err?.name === 'TypeError') {
       console.info('[Push] Push notification registration deferred: network currently unreachable.');
     } else {
-      console.warn('[Push] Could not register push token:', err?.message || err);
+      console.warn('[Push] Push token registration warning:', errMsg);
     }
     return null;
   }

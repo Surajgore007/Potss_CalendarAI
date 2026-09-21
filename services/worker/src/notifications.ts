@@ -315,13 +315,17 @@ export async function sendExpoPushBatches(
                 const token = batch[idx]?.to;
                 const uid = token ? tokenToUid.get(token) : null;
                 if (uid) deadUids.push(uid);
+              } else {
+                console.warn(
+                  `[Expo Push] Delivery failure ticket: code=${ticket.details?.error || 'UNKNOWN'} message=${ticket.message || 'none'}`
+                );
               }
             }
           });
         }
       }
-    } catch {
-      // Expo batch delivery failed
+    } catch (pushErr: any) {
+      console.warn('[Expo Push] Batch delivery exception:', pushErr?.message || pushErr);
     }
   }
 
