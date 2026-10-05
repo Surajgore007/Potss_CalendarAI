@@ -1,6 +1,6 @@
 {
   "name": "eventpulse-mobile",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -29,6 +29,7 @@
     "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.24",
     "expo-status-bar": "~3.0.9",
+    "expo-updates": "~29.0.20",
     "expo-web-browser": "~15.0.11",
     "firebase": "^10.8.0",
     "react": "19.1.0",

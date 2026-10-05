@@ -257,48 +257,64 @@ async function verifyFirebaseToken(
 
   const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_PROJECT_ID;
 
+  let payload: any;
   try {
-    const { payload } = await jwtVerify(token, GOOGLE_JWKS, {
+    const result = await jwtVerify(token, GOOGLE_JWKS, {
       audience: projectId,
       issuer: `https://securetoken.google.com/${projectId}`,
     });
-
-    if (!payload.sub) {
-      throw new Error('INVALID_UID');
+    payload = result.payload;
+  } catch (jwtErr: any) {
+    // Classify JWT errors clearly:
+    // - Expired token → INVALID_TOKEN (user must re-auth)
+    // - Wrong key/audience/issuer → INVALID_TOKEN
+    // - Network error fetching JWKS → rethrow to produce 500 (not a token problem)
+    const msg = jwtErr?.message || String(jwtErr);
+    if (msg.includes('fetch') || msg.includes('network') || msg.includes('ENOTFOUND')) {
+      // JWKS fetch failed — transient network issue. Throw as internal, not auth error.
+      throw new Error('JWKS_UNAVAILABLE');
     }
+    throw new Error('INVALID_TOKEN');
+  }
 
-    let isAdmin = payload.admin === true || payload.role === 'admin';
-    let role: 'admin' | 'student' = isAdmin ? 'admin' : 'student';
-    let college =
-      typeof payload.college === 'string' && payload.college.trim()
-        ? payload.college.trim()
-        : 'SIES_GST';
+  if (!payload?.sub) {
+    throw new Error('INVALID_TOKEN');
+  }
 
-    // Single Source of Truth: Cryptographically signed Custom Claims on verified JWT.
-    // Fallback: If custom claims are not explicitly present on the token (legacy or newly created accounts),
-    // query Firestore /users/{uid} using the server's private Google Service Account.
-    if (!isAdmin && payload.admin === undefined && payload.role === undefined && payload.sub) {
+  let isAdmin = payload.admin === true || payload.role === 'admin';
+  let role: 'admin' | 'student' = isAdmin ? 'admin' : 'student';
+  let college =
+    typeof payload.college === 'string' && payload.college.trim()
+      ? payload.college.trim()
+      : 'SIES_GST';
+
+  // Single Source of Truth: Cryptographically signed Custom Claims on verified JWT.
+  // Fallback: If token claims say not-admin, double-check Firestore for the server-side role.
+  // This handles newly created admin accounts, stale JWTs, and accounts where
+  // custom claims haven't yet propagated to the client's cached token.
+  if (!isAdmin && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY) {
+    try {
       const fsRole = await getUserRole(payload.sub, env);
       if (fsRole === 'admin') {
         isAdmin = true;
         role = 'admin';
-        // Auto-provision the custom claim in the background so future JWTs have it natively
+        // Auto-provision the custom claim so future JWTs contain it natively
         autoProvisionAdminClaims(payload.sub, college, env).catch(() => {});
       }
+    } catch {
+      // Firestore lookup failed — fall back to JWT claims only
     }
-
-    return {
-      uid: payload.sub,
-      email: typeof payload.email === 'string' ? payload.email : undefined,
-      authTime: typeof payload.auth_time === 'number' ? payload.auth_time : undefined,
-      isAdmin,
-      role,
-      college,
-      claims: (payload as Record<string, unknown>) || {},
-    };
-  } catch (err: any) {
-    throw new Error('INVALID_TOKEN');
   }
+
+  return {
+    uid: payload.sub,
+    email: typeof payload.email === 'string' ? payload.email : undefined,
+    authTime: typeof payload.auth_time === 'number' ? payload.auth_time : undefined,
+    isAdmin,
+    role,
+    college,
+    claims: (payload as Record<string, unknown>) || {},
+  };
 }
 
 /**
@@ -320,13 +336,16 @@ async function autoProvisionAdminClaims(
       role: 'admin',
       college: college || 'SIES_GST',
     });
-    await fetch(
-      `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:setCustomUserClaims`,
+    // Correct Firebase Admin REST API endpoint to set custom claims:
+    // POST /v1/projects/{projectId}/accounts:update with localId + customAttributes
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`,
       {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
+          'X-Firebase-Client': 'cloudflare-worker',
         },
         body: JSON.stringify({
           localId: uid,
@@ -334,8 +353,14 @@ async function autoProvisionAdminClaims(
         }),
       }
     );
-  } catch {
-    // Non-blocking background sync
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.warn(`[AutoProvision] Failed to set custom claims for ${uid}: ${res.status} ${errText}`);
+    } else {
+      console.log(`[AutoProvision] Admin custom claims provisioned for uid: ${uid}`);
+    }
+  } catch (err: any) {
+    console.warn('[AutoProvision] Non-blocking background sync exception:', err?.message || err);
   }
 }
 
@@ -808,7 +833,10 @@ export default {
         let user: VerifiedToken;
         try {
           user = await verifyFirebaseToken(authHeader, env);
-        } catch {
+        } catch (authErr: any) {
+          if (authErr?.message === 'JWKS_UNAVAILABLE') {
+            return jsonResponse({ error: 'SERVICE_UNAVAILABLE', message: 'Authentication service temporarily unavailable. Please retry in a moment.' }, 503);
+          }
           return jsonResponse({ error: 'UNAUTHORIZED', message: 'Valid admin authentication required.' }, 401);
         }
 
@@ -957,7 +985,10 @@ export default {
         let user: VerifiedToken;
         try {
           user = await verifyFirebaseToken(authHeader, env);
-        } catch {
+        } catch (authErr: any) {
+          if (authErr?.message === 'JWKS_UNAVAILABLE') {
+            return jsonResponse({ error: 'SERVICE_UNAVAILABLE', message: 'Authentication service temporarily unavailable. Please retry in a moment.' }, 503);
+          }
           return jsonResponse({ error: 'UNAUTHORIZED', message: 'Valid admin authentication required.' }, 401);
         }
 

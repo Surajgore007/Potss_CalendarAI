@@ -123,7 +123,7 @@ export default function ConfirmScreen() {
           const published = await batchPublishCommunityEvents([item], user.uid, 'SIES_GST');
           if (notifyStudents && published.length > 0) {
             try {
-              const token = await getIdToken();
+              const token = await getIdToken(true);
               const workerUrl =
                 process.env.EXPO_PUBLIC_WORKER_URL ||
                 process.env.EXPO_PUBLIC_API_URL ||
@@ -201,7 +201,7 @@ export default function ConfirmScreen() {
           const published = await batchPublishCommunityEvents(pendingExtractions, user.uid, 'SIES_GST');
           if (notifyStudents && published.length > 0) {
             try {
-              const token = await getIdToken();
+              const token = await getIdToken(true);
               const workerUrl =
                 process.env.EXPO_PUBLIC_WORKER_URL ||
                 process.env.EXPO_PUBLIC_API_URL ||

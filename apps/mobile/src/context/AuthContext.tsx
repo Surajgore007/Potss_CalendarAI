@@ -417,13 +417,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const getIdToken = async (forceRefresh: boolean = false): Promise<string | null> => {
-    if (!firebaseUser) return null;
-    try {
-      return await firebaseUser.getIdToken(forceRefresh);
-    } catch (err) {
-      console.error('Failed to get fresh Firebase ID token:', err);
-      return null;
+    // Primary: use cached Firebase user object (fastest, no network)
+    if (firebaseUser) {
+      try {
+        return await firebaseUser.getIdToken(forceRefresh);
+      } catch (err) {
+        console.warn('[Auth] Failed to get token from cached firebaseUser, falling back to re-init:', err);
+      }
     }
+
+    // Fallback: Re-initialize Firebase Auth and get current user from it directly.
+    // This handles the case where firebaseUser React state is null but the user IS
+    // authenticated (e.g., session restored from AsyncStorage, or backgrounded state).
+    try {
+      const { app } = initFirebase();
+      const auth = getAppAuth(app);
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        // Also restore firebaseUser state so future calls are instant
+        setFirebaseUser(currentUser);
+        return await currentUser.getIdToken(forceRefresh);
+      }
+    } catch (err) {
+      console.error('[Auth] Failed to get Firebase ID token via auth.currentUser:', err);
+    }
+
+    return null;
   };
 
   /**

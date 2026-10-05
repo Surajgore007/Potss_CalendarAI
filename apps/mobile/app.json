@@ -2,7 +2,7 @@
   "expo": {
     "name": "Vanko",
     "slug": "eventpulse",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon/vanko-icon.png",
     "userInterfaceStyle": "light",
@@ -24,7 +24,7 @@
     },
     "android": {
       "package": "com.suraj.eventpulse",
-      "versionCode": 3,
+      "versionCode": 4,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon/vanko-adaptive-foreground.png",
@@ -175,7 +175,8 @@
             "minSdkVersion": 24,
             "enableProguardInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "-keep class com.google.firebase.** { *; }\n-keep class com.google.android.gms.** { *; }\n-keep class expo.modules.notifications.** { *; }\n-keep class expo.modules.** { *; }\n-dontwarn com.google.firebase.**\n-dontwarn expo.modules.notifications.**"
+            "extraProguardRules": "-keep class com.google.firebase.** { *; }\n-keep class com.google.android.gms.** { *; }\n-keep class expo.modules.notifications.** { *; }\n-keep class expo.modules.** { *; }\n-dontwarn com.google.firebase.**\n-dontwarn expo.modules.notifications.**",
+            "enableMinifyInReleaseBuilds": true
           }
         }
       ]
@@ -190,6 +191,12 @@
       "eas": {
         "projectId": "d27b40b1-ee0c-41d0-8304-03737c41cc50"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/d27b40b1-ee0c-41d0-8304-03737c41cc50"
     }
   }
 }

@@ -92,7 +92,8 @@ export function AdminFeedbackModal({ visible, onClose }: AdminFeedbackModalProps
     setReplyActionError(null);
 
     try {
-      const idToken = await getIdToken();
+      // Force-refresh the token to ensure it's valid and has latest admin custom claims
+      const idToken = await getIdToken(true);
       if (!idToken) {
         setReplyActionError('Authentication token expired. Please re-sign in.');
         setIsSendingReply(false);
@@ -156,7 +157,8 @@ export function AdminFeedbackModal({ visible, onClose }: AdminFeedbackModalProps
     setErrorMsg(null);
 
     try {
-      const idToken = await getIdToken();
+      // Force-refresh the token to ensure it's valid and has latest custom claims
+      const idToken = await getIdToken(true);
       if (!idToken) {
         setErrorMsg('Authentication required. Please sign in as an administrator.');
         setLoading(false);

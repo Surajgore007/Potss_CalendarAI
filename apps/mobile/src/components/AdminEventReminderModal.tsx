@@ -115,7 +115,8 @@ export function AdminEventReminderModal({
     setErrorMsg(null);
 
     try {
-      const idToken = await getIdToken();
+      // Force-refresh to ensure token is valid and has latest admin custom claims
+      const idToken = await getIdToken(true);
       if (!idToken) {
         setErrorMsg('Authentication expired. Please sign in as admin again.');
         setIsSending(false);
