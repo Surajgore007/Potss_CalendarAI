@@ -128,7 +128,7 @@ function InitialLayout() {
   // Sync push notification registration whenever user is logged in
   useEffect(() => {
     if (user?.uid && Platform.OS !== 'web') {
-      registerForPushNotificationsAsync(user.uid, user.college || 'General').catch(() => {});
+      registerForPushNotificationsAsync(user.uid, user.college || 'SIES_GST').catch(() => {});
     }
   }, [user?.uid]);
 

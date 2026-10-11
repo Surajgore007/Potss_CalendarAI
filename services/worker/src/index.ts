@@ -855,14 +855,18 @@ export default {
           );
         }
 
-        const adminCollege = user.college || 'SIES_GST';
-
         const body = (await request.json()) as {
           eventId?: string;
           title?: string;
           body?: string;
           eventType?: string;
+          college?: string;
         };
+
+        const adminCollege =
+          (body.college && typeof body.college === 'string' && body.college.trim()) ||
+          user.college ||
+          'SIES_GST';
 
         if (
           !body.eventId ||
@@ -882,7 +886,7 @@ export default {
             ? body.body.trim().slice(0, 500)
             : `New ${body.eventType || 'event'} added to ${adminCollege} feed!`;
 
-        // Check Idempotency: One broadcast per event
+        // Check Idempotency: Debounce double-clicks within 60 seconds
         const idemp = await checkBroadcastIdempotency(body.eventId, env);
         if (idemp.alreadyBroadcast) {
           return jsonResponse(
@@ -890,7 +894,7 @@ export default {
               success: true,
               deduplicated: true,
               recipientsCount: 0,
-              message: 'Broadcast already dispatched for this event.',
+              message: 'Broadcast already dispatched for this event within the last 60 seconds.',
               broadcastAt: idemp.timestamp,
             },
             200
@@ -911,12 +915,11 @@ export default {
         // Query college student push tokens
         const recipients = await queryCollegePushTokens(adminCollege, env);
         if (recipients.length === 0) {
-          await recordBroadcastHistory(body.eventId, user.uid, adminCollege, eventTitle, 0, [], env);
           return jsonResponse(
             {
               success: true,
               recipientsCount: 0,
-              message: `Campus announcement saved. No active student push tokens found for ${adminCollege}.`,
+              message: `Campus announcement saved. No active student devices with push tokens found for ${adminCollege}.`,
             },
             200
           );

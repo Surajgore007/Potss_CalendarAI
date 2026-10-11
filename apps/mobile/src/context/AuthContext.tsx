@@ -135,7 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const online = await isOnline();
               const currentKnownRole = userRef.current?.role;
               let userRole: UserRole = currentKnownRole || 'student';
-              let college = userRef.current?.college || 'General';
+              let college = userRef.current?.college || 'SIES_GST';
               try {
                 // 1. Single Source of Truth: Decode Custom Claims directly from Firebase ID Token
                 const tokenResult = await fbUser.getIdTokenResult();
@@ -459,7 +459,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const currentProfile = userRef.current;
       const currentKnownRole = currentProfile?.role;
       let userRole: UserRole = currentKnownRole || 'student';
-      let college = currentProfile?.college || 'General';
+      let college = currentProfile?.college || 'SIES_GST';
 
       // 1. Single Source of Truth: Cryptographically signed Custom Claims on the ID Token
       if (claims.admin === true || claims.role === 'admin') {

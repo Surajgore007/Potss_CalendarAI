@@ -129,7 +129,8 @@ export function AdminEventReminderModal({
           title: cleanTitle,
           body: cleanMessage,
           eventType: event.type,
-        }).catch(() => null);
+          college: 'SIES_GST',
+        });
 
         await saveCollegeAnnouncement({
           college: 'SIES_GST',
@@ -143,8 +144,8 @@ export function AdminEventReminderModal({
         const recipients = broadcastRes?.recipientsCount ?? 0;
         setSuccessMsg(
           recipients > 0
-            ? `Broadcast sent to ${recipients} student(s) & saved to Notification Center!`
-            : 'Campus announcement published to Notification Center for all students!'
+            ? `🚀 Broadcast sent to ${recipients} student(s) & saved to Notification Center!`
+            : broadcastRes?.message || 'Announcement saved to Notification Center. (0 active student push tokens found).'
         );
         if (onSuccess) {
           onSuccess(recipients);

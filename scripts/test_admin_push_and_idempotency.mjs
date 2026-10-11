@@ -88,23 +88,48 @@ assert.equal(deadTokens.length, 1, 'Must detect exactly 1 dead token');
 assert.equal(deadTokens[0], 'ExponentPushToken[student_1]', 'Must isolate the DeviceNotRegistered token');
 console.log('✔ Test 3 passed: Tier 1 dead tokens accurately identified for nullification');
 
-// Test 4: College Multi-Tenant Scoping
-console.log('\n--- Test Suite 4: Multi-Tenant College Scoping ---');
+// Test 4: College Multi-Tenant Scoping & SIES GST Normalization
+console.log('\n--- Test Suite 4: Multi-Tenant College Scoping & SIES GST Normalization ---');
+
+function isSiesGstCollege(val) {
+  if (!val) return true;
+  const clean = val.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return clean === 'siesgst' || clean === 'sies' || clean === 'general' || clean === '';
+}
+
+function matchesCollegeTenant(targetCollege, userCollege) {
+  const target = targetCollege?.trim();
+  const user = userCollege?.trim();
+  if (isSiesGstCollege(target)) {
+    return isSiesGstCollege(user);
+  }
+  const normTarget = target?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+  const normUser = user?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+  return normTarget === normUser;
+}
+
+assert.equal(matchesCollegeTenant('SIES_GST', 'siesgst'), true, 'SIES_GST must match siesgst');
+assert.equal(matchesCollegeTenant('siesgst', 'SIES_GST'), true, 'siesgst must match SIES_GST');
+assert.equal(matchesCollegeTenant('SIES_GST', 'General'), true, 'SIES_GST must match General');
+assert.equal(matchesCollegeTenant('SIES_GST', undefined), true, 'SIES_GST must match undefined college');
+assert.equal(matchesCollegeTenant('SIES_GST', 'OTHER_COLLEGE'), false, 'SIES_GST must not match other college');
+
 const allUsers = [
   { uid: 'u1', college: 'SIES_GST', pushToken: 'ExponentPushToken[sies_1]' },
-  { uid: 'u2', college: 'SIES_GST', pushToken: 'ExponentPushToken[sies_2]' },
-  { uid: 'u3', college: 'OTHER_COLLEGE', pushToken: 'ExponentPushToken[other_1]' },
-  { uid: 'u4', college: 'SIES_GST', pushToken: null }, // Opted out / signed out
+  { uid: 'u2', college: 'siesgst', pushToken: 'ExponentPushToken[sies_2]' },
+  { uid: 'u3', college: 'General', pushToken: 'ExponentPushToken[general_1]' },
+  { uid: 'u4', college: 'OTHER_COLLEGE', pushToken: 'ExponentPushToken[other_1]' },
+  { uid: 'u5', college: 'SIES_GST', pushToken: null }, // Opted out / signed out
 ];
 
-const adminCollege = 'SIES_GST';
+const adminCollege = 'siesgst';
 const targetRecipients = allUsers.filter(
-  (u) => u.college === adminCollege && u.pushToken !== null
+  (u) => matchesCollegeTenant(adminCollege, u.college) && u.pushToken !== null
 );
 
-assert.equal(targetRecipients.length, 2, 'Only SIES_GST students with active tokens must be targeted');
-assert.ok(!targetRecipients.some((u) => u.college !== 'SIES_GST'), 'Must never include students from another college');
-console.log('✔ Test 4 passed: Strict tenant scoping prevents cross-college leaks');
+assert.equal(targetRecipients.length, 3, 'Must match SIES_GST, siesgst, and General students with active tokens');
+assert.ok(!targetRecipients.some((u) => u.college === 'OTHER_COLLEGE'), 'Must never include students from another college');
+console.log('✔ Test 4 passed: Strict tenant scoping & inclusive SIES GST normalization verified');
 
 // Test 5: Custom Claims Unified Admin Trust
 console.log('\n--- Test Suite 5: Custom Claims Unified Admin Trust ---');

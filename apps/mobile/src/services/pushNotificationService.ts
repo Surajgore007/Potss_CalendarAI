@@ -16,7 +16,7 @@ const DEFAULT_EAS_PROJECT_ID = 'd27b40b1-ee0c-41d0-8304-03737c41cc50';
  */
 export async function registerForPushNotificationsAsync(
   uid: string,
-  college: string = 'General'
+  college: string = 'SIES_GST'
 ): Promise<string | null> {
   if (Platform.OS === 'web') return null;
 

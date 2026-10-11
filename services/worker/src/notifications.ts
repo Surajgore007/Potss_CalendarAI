@@ -190,6 +190,29 @@ export async function saveCollegeAnnouncementRecord(
   }
 }
 
+/** Helper to check if a college string refers to SIES GST (or generic campus cohort) */
+export function isSiesGstCollege(val?: string | null): boolean {
+  if (!val) return true;
+  const clean = val.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return clean === 'siesgst' || clean === 'sies' || clean === 'general' || clean === '';
+}
+
+/** Check if student college matches broadcast target college */
+export function matchesCollegeTenant(targetCollege: string | undefined, userCollege: string | undefined): boolean {
+  const target = targetCollege?.trim();
+  const user = userCollege?.trim();
+
+  // If broadcast is for SIES GST (or default), include all SIES GST, General, and unset accounts
+  if (isSiesGstCollege(target)) {
+    return isSiesGstCollege(user);
+  }
+
+  // Cross-college strict matching for other colleges
+  const normTarget = target?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+  const normUser = user?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+  return normTarget === normUser;
+}
+
 /** Query all students registered under college who have a valid Expo push token */
 export async function queryCollegePushTokens(
   college: string,
@@ -200,30 +223,57 @@ export async function queryCollegePushTokens(
 
   try {
     const accessToken = await getGoogleFirestoreAccessToken(env);
-    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+    let documents: any[] = [];
 
-    // Fetch active user records (up to 1000)
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId: 'users' }],
-          limit: 1000,
+    // Strategy A: Try runQuery
+    try {
+      const runQueryUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+      const res = await fetch(runQueryUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
         },
-      }),
-    });
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: 'users' }],
+            limit: 1000,
+          },
+        }),
+      });
 
-    if (!res.ok) {
-      return [];
+      if (res.ok) {
+        const items = (await res.json()) as any[];
+        for (const item of items) {
+          if (item?.document) {
+            documents.push(item.document);
+          }
+        }
+      }
+    } catch (queryErr) {
+      console.warn('[PushQuery] runQuery attempt encountered error, trying direct list:', queryErr);
     }
 
-    const items = (await res.json()) as any[];
-    for (const item of items) {
-      const doc = item?.document;
+    // Strategy B: Fallback to direct document listing if runQuery produced no documents
+    if (documents.length === 0) {
+      try {
+        const listUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users?pageSize=300`;
+        const listRes = await fetch(listUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        if (listRes.ok) {
+          const listData = (await listRes.json()) as any;
+          if (Array.isArray(listData?.documents)) {
+            documents = listData.documents;
+          }
+        }
+      } catch (listErr) {
+        console.warn('[PushQuery] Direct listing fallback error:', listErr);
+      }
+    }
+
+    for (const doc of documents) {
       if (!doc || !doc.fields) continue;
 
       const pushToken = doc.fields.pushToken?.stringValue;
@@ -231,26 +281,21 @@ export async function queryCollegePushTokens(
         pushToken &&
         (pushToken.startsWith('ExponentPushToken[') ||
           pushToken.startsWith('ExpoPushToken[') ||
-          pushToken.includes('PushToken['))
+          pushToken.includes('PushToken[') ||
+          /^[a-zA-Z0-9_-]{20,}$/.test(pushToken))
       ) {
         const userCollege = doc.fields.college?.stringValue;
-        // Tenant matching: If broadcast is for SIES_GST, include SIES_GST, General, or unset college.
-        // Prevent cross-college leakage: if user is explicitly registered with another college, exclude them.
-        const isMatch =
-          !college || college === 'SIES_GST'
-            ? !userCollege || userCollege === 'SIES_GST' || userCollege === 'General'
-            : userCollege === college;
-
-        if (isMatch) {
-          // Extract UID from resource name: projects/.../databases/(default)/documents/users/{uid}
+        if (matchesCollegeTenant(college, userCollege)) {
           const pathParts = doc.name.split('/');
           const uid = pathParts[pathParts.length - 1];
           recipients.push({ uid, pushToken });
         }
       }
     }
-  } catch {
-    // Token query failed
+
+    console.log(`[PushQuery] Found ${recipients.length} eligible push token recipients for college: "${college}" (scanned ${documents.length} users)`);
+  } catch (err: any) {
+    console.error('[PushQuery] Exception querying student push tokens:', err?.message || err);
   }
 
   return recipients;
