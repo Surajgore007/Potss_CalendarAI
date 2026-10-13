@@ -25,7 +25,9 @@ import { AdminFeedbackModal } from '../../src/components/AdminFeedbackModal';
 import { DeleteAccountModal } from '../../src/components/DeleteAccountModal';
 import { ManageConsentsModal } from '../../src/components/ManageConsentsModal';
 import { MyDataModal } from '../../src/components/MyDataModal';
+import { CampusAffiliationModal } from '../../src/components/CampusAffiliationModal';
 import { colors, radii, shadows } from '../../src/theme/tokens';
+import { COLLEGE_SIES_GST, COLLEGE_OTHER } from '@eventpulse/shared';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -40,6 +42,7 @@ export default function SettingsScreen() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showConsentsModal, setShowConsentsModal] = useState(false);
   const [showMyDataModal, setShowMyDataModal] = useState(false);
+  const [showCollegeModal, setShowCollegeModal] = useState(false);
 
   // Subscribe to real-time live platform user count
   useEffect(() => {
@@ -129,6 +132,57 @@ export default function SettingsScreen() {
                 )}
               </View>
             </View>
+          </GlassCard>
+
+          {/* Campus Affiliation */}
+          <GlassCard contentStyle={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionHeader} numberOfLines={1}>Campus Affiliation</Text>
+              <View
+                style={[
+                  styles.campusPill,
+                  user?.college === COLLEGE_OTHER ? styles.campusPillOther : styles.campusPillSies,
+                ]}
+              >
+                <Ionicons
+                  name={user?.college === COLLEGE_OTHER ? 'globe-outline' : 'shield-checkmark'}
+                  size={10}
+                  color={user?.college === COLLEGE_OTHER ? colors.textSecondary : colors.primary}
+                />
+                <Text
+                  style={[
+                    styles.campusPillText,
+                    user?.college === COLLEGE_OTHER ? styles.campusPillTextOther : styles.campusPillTextSies,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {user?.college === COLLEGE_OTHER ? 'General Student' : 'SIES GST Member'}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.touchableRow}
+              onPress={() => setShowCollegeModal(true)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.rowIconCircle, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
+                <Ionicons name="school-outline" size={16} color={colors.primary} />
+              </View>
+              <View style={styles.rowTextCol}>
+                <Text style={styles.rowTitle} numberOfLines={1}>
+                  {user?.college === COLLEGE_OTHER
+                    ? 'Other College / General Student'
+                    : 'SIES Graduate School of Technology'}
+                </Text>
+                <Text style={styles.rowSub} numberOfLines={2}>
+                  {user?.college === COLLEGE_OTHER
+                    ? 'Tap to change your affiliation or join SIES GST broadcasts.'
+                    : 'Receiving all official SIES GST campus notifications & broadcasts.'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
           </GlassCard>
 
           {/* Live Platform & Community Network */}
@@ -319,6 +373,12 @@ export default function SettingsScreen() {
           visible={showMyDataModal}
           onClose={() => setShowMyDataModal(false)}
         />
+        <CampusAffiliationModal
+          visible={showCollegeModal}
+          onClose={() => setShowCollegeModal(false)}
+          currentCollege={user?.college}
+          isEditing
+        />
       </View>
     </SafeAreaView>
   );
@@ -435,6 +495,40 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  campusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: radii.pill,
+  },
+  campusPillSies: {
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+  },
+  campusPillOther: {
+    backgroundColor: 'rgba(148, 163, 184, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.25)',
+  },
+  campusPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  campusPillTextSies: {
+    color: colors.primary,
+  },
+  campusPillTextOther: {
+    color: colors.textSecondary,
   },
   rowItem: {
     flexDirection: 'row',

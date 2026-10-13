@@ -27,6 +27,8 @@ import {
   trackUserRegistration,
   fetchUserRole,
   updateUserDisplayNameInFirestore,
+  updateUserCollegeInFirestore,
+  fetchUserProfileData,
 } from '@eventpulse/shared';
 import { isOnline } from '../services/networkService';
 import { registerForPushNotificationsAsync, unregisterPushTokenAsync } from '../services/pushNotificationService';
@@ -75,6 +77,7 @@ interface AuthContextType {
   getIdToken: (forceRefresh?: boolean) => Promise<string | null>;
   refreshPermissions: () => Promise<boolean>;
   updateDisplayName: (newName: string) => Promise<void>;
+  updateCollege: (college: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -136,7 +139,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const currentKnownRole = userRef.current?.role;
               let userRole: UserRole = currentKnownRole || 'student';
               let college = userRef.current?.college || 'SIES_GST';
+              let collegeSelected = userRef.current?.collegeSelected || false;
               try {
+                if (online) {
+                  const profileData = await fetchUserProfileData(fbUser.uid);
+                  if (profileData.role === 'admin') {
+                    userRole = 'admin';
+                  } else if (currentKnownRole !== 'admin') {
+                    userRole = profileData.role || 'student';
+                  }
+                  if (profileData.college) {
+                    college = profileData.college;
+                  }
+                  if (profileData.collegeSelected !== undefined) {
+                    collegeSelected = profileData.collegeSelected;
+                  }
+                }
+
                 // 1. Single Source of Truth: Decode Custom Claims directly from Firebase ID Token
                 const tokenResult = await fbUser.getIdTokenResult();
                 const claims = tokenResult?.claims || {};
@@ -144,22 +163,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   userRole = 'admin';
                 } else if (claims.admin === false || claims.role === 'student') {
                   userRole = 'student';
-                } else if (online) {
-                  const fsRole = await fetchUserRole(fbUser.uid);
-                  if (fsRole === 'admin') {
-                    userRole = 'admin';
-                  } else if (currentKnownRole === 'admin') {
-                    // Do not drop established admin role on transient cold-start network/read ambiguity
-                    userRole = 'admin';
-                  } else {
-                    userRole = fsRole;
-                  }
-                } else if (currentKnownRole) {
-                  userRole = currentKnownRole;
                 }
 
                 if (typeof claims.college === 'string' && claims.college.trim()) {
                   college = claims.college.trim();
+                  collegeSelected = true;
                 }
               } catch {
                 userRole = currentKnownRole || 'student';
@@ -172,6 +180,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 photoURL: fbUser.photoURL || null,
                 role: userRole,
                 college,
+                collegeSelected,
                 defaultReminderOffsets: [4320, 1440, 0],
               };
               setUser(profile);
@@ -586,6 +595,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateCollege = async (newCollege: string) => {
+    const trimmed = (newCollege || 'OTHER').trim();
+
+    // 1. Update in-memory state & ref immediately (optimistic)
+    const updated: UserProfile = {
+      ...(userRef.current || user || {
+        uid: firebaseUser?.uid || '',
+        email: firebaseUser?.email || '',
+        displayName: firebaseUser?.displayName || 'User',
+        photoURL: null,
+        role: 'student',
+        defaultReminderOffsets: [4320, 1440, 0],
+      }),
+      college: trimmed,
+      collegeSelected: true,
+    };
+    userRef.current = updated;
+    setUser(updated);
+
+    // 2. Persist to AsyncStorage
+    await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated)).catch(() => {});
+
+    // 3. Persist to Firestore (/users/{uid})
+    const uid = firebaseUser?.uid || userRef.current?.uid || user?.uid;
+    if (uid) {
+      try {
+        await updateUserCollegeInFirestore(uid, trimmed);
+      } catch (err) {
+        console.warn('Could not update college in Firestore:', err);
+      }
+
+      // 4. Sync Expo push notification token with new college affiliation
+      if (Platform.OS !== 'web') {
+        registerForPushNotificationsAsync(uid, trimmed).catch(() => {});
+      }
+    }
+  };
+
   const role: UserRole = user?.role || 'student';
   const isAdmin: boolean = role === 'admin';
 
@@ -606,6 +653,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         getIdToken,
         refreshPermissions,
         updateDisplayName,
+        updateCollege,
       }}
     >
       {children}

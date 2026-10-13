@@ -238,3 +238,19 @@ export const SAMPLE_WHATSAPP_MESSAGES = [
     text: `🤖 *Free Workshop: Building Full-Stack LLM Apps with LangChain & Next.js*\n\nHey everyone! GDG Pune is hosting a free hands-on workshop.\n\n📅 *Date:* Sep 28, 2026\n🕒 *Time:* 2:00 PM - 5:00 PM IST\n📍 *Venue:* Cummins College of Engineering, Pune (Offline)\n\n⚡ *Seats limited to 80 people!*\n⏳ *Registration Closes:* Sep 25, 2026\n🎟️ RSVP here: https://gdg.community.dev/events/pune-ai-workshop\nBring your laptops!`,
   },
 ];
+
+/** Standard College Affiliation Constants */
+export const COLLEGE_SIES_GST = 'SIES_GST';
+export const COLLEGE_OTHER = 'OTHER';
+
+export const COLLEGE_LABELS: Record<string, string> = {
+  [COLLEGE_SIES_GST]: 'SIES Graduate School of Technology (SIES GST)',
+  [COLLEGE_OTHER]: 'Other College / General Student',
+};
+
+/** Helper to check whether a college string represents SIES GST */
+export function isSiesGstAffiliated(college?: string | null): boolean {
+  if (!college) return false;
+  const clean = college.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return clean === 'siesgst' || clean === 'sies';
+}

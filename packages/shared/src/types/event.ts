@@ -124,6 +124,7 @@ export interface UserProfile {
   pushToken?: string | null;
   pushTokenUpdatedAt?: string;
   college?: string;
+  collegeSelected?: boolean;
 }
 
 export interface BroadcastNotificationRequest {

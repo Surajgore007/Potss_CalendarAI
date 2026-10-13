@@ -558,6 +558,50 @@ export async function updateUserDisplayNameInFirestore(
   );
 }
 
+/** Update user's college affiliation in Firestore (/users/{uid}) */
+export async function updateUserCollegeInFirestore(
+  uid: string,
+  college: string
+): Promise<void> {
+  const db = getDb();
+  const userDoc = doc(db, 'users', uid);
+  await setDoc(
+    userDoc,
+    {
+      college: college || 'OTHER',
+      collegeSelected: true,
+      updated_at: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+}
+
+/** Fetch full user profile data including college affiliation */
+export async function fetchUserProfileData(uid: string): Promise<{
+  role?: UserRole;
+  college?: string;
+  collegeSelected?: boolean;
+}> {
+  try {
+    const db = getDb();
+    const userDoc = doc(db, 'users', uid);
+    const snap = await getDoc(userDoc);
+    if (snap.exists()) {
+      const data = snap.data();
+      return {
+        role: data.role === 'admin' ? 'admin' : 'student',
+        college: data.college,
+        collegeSelected: !!data.collegeSelected,
+      };
+    }
+  } catch (e: any) {
+    if (e?.code !== 'unavailable') {
+      console.warn('Could not fetch user profile data:', e?.message || e);
+    }
+  }
+  return {};
+}
+
 /** Broadcast an announcement push notification to all students in a college via Cloudflare Worker */
 export async function broadcastCommunityPushNotification(
   workerUrl: string,

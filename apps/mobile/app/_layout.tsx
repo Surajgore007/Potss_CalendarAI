@@ -18,13 +18,13 @@ import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 import { registerForPushNotificationsAsync } from '../src/services/pushNotificationService';
 import { OnboardingModal } from '../src/components/OnboardingModal';
+import { CampusAffiliationModal } from '../src/components/CampusAffiliationModal';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
 
 // Initialize notification behavior immediately on module load so notifications are never dropped
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: true,
       shouldShowBanner: true,
@@ -34,12 +34,14 @@ if (Platform.OS !== 'web') {
 }
 
 const ONBOARDING_KEY_PREFIX = '@vanko_onboarding_done_';
+const COLLEGE_PROMPT_KEY_PREFIX = '@vanko_college_prompt_answered_';
 
 function InitialLayout() {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showCollegePrompt, setShowCollegePrompt] = useState(false);
   const [checkedUid, setCheckedUid] = useState<string | null>(null);
 
   // Queue to hold incoming share text until auth & layout are fully initialized
@@ -191,6 +193,25 @@ function InitialLayout() {
     }
   };
 
+  // Check if user has answered the college prompt — once per UID
+  useEffect(() => {
+    if (!user || isLoading || showOnboarding) return;
+
+    if (user.collegeSelected) {
+      setShowCollegePrompt(false);
+      return;
+    }
+
+    const key = `${COLLEGE_PROMPT_KEY_PREFIX}${user.uid}`;
+    AsyncStorage.getItem(key)
+      .then((val) => {
+        if (!val) {
+          setShowCollegePrompt(true);
+        }
+      })
+      .catch(() => {});
+  }, [user, isLoading, showOnboarding, user?.collegeSelected]);
+
   const isResolvingAuth = isLoading || (!user && segments[0] !== '(public)');
 
   return (
@@ -204,6 +225,11 @@ function InitialLayout() {
       )}
 
       <OnboardingModal visible={showOnboarding} onDismiss={handleOnboardingDismiss} />
+      <CampusAffiliationModal
+        visible={showCollegePrompt}
+        onClose={() => setShowCollegePrompt(false)}
+        currentCollege={user?.college}
+      />
     </View>
   );
 }

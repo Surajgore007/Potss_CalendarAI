@@ -11,7 +11,6 @@ function getNotifications(): typeof import('expo-notifications') | null {
       notificationsModule = require('expo-notifications');
       notificationsModule?.setNotificationHandler({
         handleNotification: async () => ({
-          shouldShowAlert: true,
           shouldPlaySound: true,
           shouldSetBadge: true,
           shouldShowBanner: true,

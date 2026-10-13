@@ -318,11 +318,24 @@ export function AdminEventReminderModal({
                     </Text>
                     <Text style={styles.targetScopeSubtitle}>
                       {targetAudience === 'all'
-                        ? 'Push notifications sent to campus & announcement added to dashboard Notification Center.'
+                        ? 'Push notifications sent to all SIES GST students & announcement added to dashboard Notification Center.'
                         : attendeesCount > 0
                         ? 'Delivered to students who added this event to their schedule.'
                         : 'No attendees yet. Select "All Campus Students" above to broadcast this event to everyone.'}
                     </Text>
+                    {targetAudience === 'attendees' && attendeesCount === 0 && (
+                      <TouchableOpacity
+                        style={styles.switchAudienceBtn}
+                        onPress={() => {
+                          setTargetAudience('all');
+                          setErrorMsg(null);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.switchAudienceBtnText}>Switch to All Campus Students</Text>
+                        <Ionicons name="arrow-forward" size={12} color={colors.primary} />
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               </View>
@@ -474,16 +487,37 @@ export function AdminEventReminderModal({
                     disabled={isSending}
                   />
                   <GlassButton
-                    title="Send to Attendees"
+                    title={
+                      targetAudience === 'all'
+                        ? 'Broadcast to All SIES GST Students'
+                        : attendeesCount > 0
+                        ? `Send to Attendees (${attendeesCount})`
+                        : 'No Attendees Yet'
+                    }
                     variant="primary"
                     onPress={handleSend}
                     loading={isSending}
-                    disabled={attendeesCount === 0 || !title.trim() || !message.trim() || isSending}
+                    disabled={
+                      isSending ||
+                      !title.trim() ||
+                      !message.trim() ||
+                      (targetAudience === 'attendees' && attendeesCount === 0)
+                    }
                     style={[
                       styles.sendBtn,
-                      (attendeesCount === 0 || !title.trim() || !message.trim()) && styles.disabledBtn,
+                      (isSending ||
+                        !title.trim() ||
+                        !message.trim() ||
+                        (targetAudience === 'attendees' && attendeesCount === 0)) &&
+                        styles.disabledBtn,
                     ]}
-                    icon={<Ionicons name="paper-plane" size={14} color="#FFFFFF" />}
+                    icon={
+                      <Ionicons
+                        name={targetAudience === 'all' ? 'megaphone' : 'paper-plane'}
+                        size={14}
+                        color="#FFFFFF"
+                      />
+                    }
                   />
                 </View>
               )}
@@ -636,6 +670,24 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.textSecondary,
     lineHeight: 14,
+  },
+  switchAudienceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+  },
+  switchAudienceBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
   },
   bodyScroll: {
     flexShrink: 1,

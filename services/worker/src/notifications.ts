@@ -190,11 +190,14 @@ export async function saveCollegeAnnouncementRecord(
   }
 }
 
-/** Helper to check if a college string refers to SIES GST (or generic campus cohort) */
+/** Helper to check if a college string refers to SIES GST */
 export function isSiesGstCollege(val?: string | null): boolean {
   if (!val) return true;
   const clean = val.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return clean === 'siesgst' || clean === 'sies' || clean === 'general' || clean === '';
+  if (clean === 'other' || clean === 'none' || clean === 'another' || clean === 'different') {
+    return false;
+  }
+  return clean === 'siesgst' || clean === 'sies' || clean === '';
 }
 
 /** Check if student college matches broadcast target college */
