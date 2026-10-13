@@ -8,7 +8,7 @@
   <title>Vanko: Smart AI Campus Calendar App for Android | Free Download</title>
   <meta name="title" content="Vanko: Smart AI Campus Calendar App for Android | Free Download">
   <meta name="description" content="Download Vanko, the smart AI campus calendar app for students in India. Extract hackathons and deadlines from WhatsApp notices with 100% offline sync.">
-  <meta name="keywords" content="Vanko app, AI campus calendar app, college calendar app Android, student event reminder app, WhatsApp notice to calendar, SIES GST campus calendar, hackathon deadline tracker, student productivity app India">
+  <meta name="keywords" content="Vanko app, AI campus calendar app, college calendar app Android, student event reminder app, WhatsApp notice to calendar, campus event calendar, hackathon deadline tracker, student productivity app India">
   <meta name="author" content="Suraj Gore">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
   <meta name="theme-color" content="#FFFFFF">
@@ -121,7 +121,7 @@
             "name": "How does Vanko extract event details from WhatsApp group notices?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Simply highlight any notice in WhatsApp, tap Share, and select Vanko. Our edge-accelerated Llama 3 AI parser identifies event titles, start/end dates, registration deadlines, venues, and registration links in under 400 milliseconds, automatically adding them to your schedule."
+              "text": "Simply highlight any notice in WhatsApp, tap Share, and select Vanko. Our high-speed AI parser identifies event titles, start/end dates, registration deadlines, venues, and registration links in under 400 milliseconds, automatically adding them to your schedule."
             }
           },
           {
@@ -150,10 +150,10 @@
           },
           {
             "@type": "Question",
-            "name": "Can I track events across colleges or specifically for SIES GST?",
+            "name": "Can I use Vanko regardless of which college or university I attend?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes! Vanko includes a dedicated campus affiliation selector. SIES GST students receive verified campus feed announcements, hackathon alerts, and attendance badges. Students from other colleges can use the full AI notice parser and personal calendar."
+              "text": "Yes, absolutely! Vanko is designed for students across all colleges and universities. Anyone can use the AI notice parser, personal calendar planner, and offline alarms. You can also connect to verified campus feeds and announcements for your institution."
             }
           },
           {
@@ -248,7 +248,7 @@
         <div class="hero-content">
           <div class="hero-badge">
             <span class="badge-dot" aria-hidden="true"></span>
-            Version 1.0.2 Live on Google Play • SIES GST Campus Hub
+            Version 1.0.2 Live on Google Play • Smart Campus Edition
           </div>
 
           <h1 class="hero-title" id="hero-heading">
@@ -310,13 +310,13 @@
                 <!-- Simulated App Header -->
                 <div class="mock-app-header">
                   <span class="mock-app-title">Today</span>
-                  <span class="mock-app-badge">SIES GST</span>
+                  <span class="mock-app-badge">Campus Feed</span>
                 </div>
 
                 <!-- Simulated Event Cards inside Phone -->
                 <div class="mock-event-card">
                   <span class="mock-event-tag">Hackathon</span>
-                  <div class="mock-event-title">SIES Tech Innovation 2026</div>
+                  <div class="mock-event-title">Annual Tech Hackathon 2026</div>
                   <div class="mock-event-meta">
                     <span>Oct 28 • 9:00 AM</span>
                     <span>•</span>
@@ -403,7 +403,7 @@
           <span class="section-label">Interactive Simulator</span>
           <h2 class="section-title" id="simulator-heading">Try the AI Notice Parser Live</h2>
           <p class="section-subtitle">
-            Select a sample WhatsApp announcement below or paste your own text to see Vanko's Llama 3 AI parser extract dates, venues, and deadlines in real time.
+            Select a sample WhatsApp announcement below or paste your own text, then click "Extract Event Card" to see Vanko's AI parser extract dates, venues, and deadlines in real time.
           </p>
         </div>
 
@@ -417,14 +417,14 @@
               <button class="sample-pill" data-sample="deadline" role="tab" aria-selected="false">Exam Deadline</button>
             </div>
 
-            <textarea id="demoInput" class="demo-textarea" aria-label="College event announcement text" placeholder="Paste any college message here...">🚀 SIES GST TECH INNOVATION HACKATHON 2026!
-Organized by CSI & IEEE Student Branch.
+            <textarea id="demoInput" class="demo-textarea" aria-label="College event announcement text" placeholder="Paste any college message here...">🚀 ANNUAL TECH INNOVATION HACKATHON 2026!
+Organized by Technical Student Council.
 
 Date: 28th - 29th October 2026
-Venue: College Auditorium & Tech Labs (Offline Mode)
+Venue: Campus Auditorium & Tech Labs (Offline Mode)
 Registration Deadline: 22nd October 2026, 11:59 PM IST
 Prizes worth ₹50,000 + Internship Opportunities!
-Register now: https://siesgst.edu.in/hackathon2026</textarea>
+Register now: https://campus-hackathon.edu/2026</textarea>
 
             <button id="btnExtract" class="btn-extract-demo" aria-label="Run simulated event extraction">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -439,31 +439,50 @@ Register now: https://siesgst.edu.in/hackathon2026</textarea>
             <span class="demo-tabs-label">2. Instant Calendar Output:</span>
             
             <div class="extracted-result-card" id="extractedResultCard">
-              <div class="extracted-status">
-                <span class="extracted-badge" id="resType">Hackathon</span>
-                <span style="font-size:0.75rem; color:#64748B; font-weight:600;">Confidence: 99.4%</span>
+              <!-- Idle placeholder state before user clicks "Extract Event Card" -->
+              <div class="demo-idle-state" id="demoIdleState">
+                <div class="idle-icon-pulse">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                </div>
+                <div class="idle-title">Awaiting Extraction</div>
+                <p class="idle-desc">
+                  Select a notice sample or paste text on the left, then click <strong>"Extract Event Card"</strong> to run the AI parser.
+                </p>
               </div>
 
-              <div class="extracted-title" id="resTitle">
-                SIES GST Tech Innovation Hackathon
-              </div>
+              <!-- Content displayed only after user clicks "Extract Event Card" -->
+              <div class="extracted-content-wrapper" id="extractedContentWrapper" style="display: none;">
+                <div class="extracted-status">
+                  <span class="extracted-badge" id="resType">Hackathon</span>
+                  <span class="extracted-meta-status" id="resConfidence">Alarms Scheduled • Ready to Save</span>
+                </div>
 
-              <div class="extracted-grid">
-                <div class="extracted-item">
-                  <div class="extracted-item-label">Event Date</div>
-                  <div class="extracted-item-val" id="resStart">Oct 28, 2026</div>
+                <div class="extracted-title" id="resTitle">
+                  Annual Tech Innovation Hackathon
                 </div>
-                <div class="extracted-item">
-                  <div class="extracted-item-label">Deadline</div>
-                  <div class="extracted-item-val" id="resDeadline" style="color:#DC2626;">Oct 22, 2026</div>
-                </div>
-                <div class="extracted-item">
-                  <div class="extracted-item-label">Location / Mode</div>
-                  <div class="extracted-item-val" id="resMode">Offline • Auditorium</div>
-                </div>
-                <div class="extracted-item">
-                  <div class="extracted-item-label">Local Alarms</div>
-                  <div class="extracted-item-val" id="resReminders">3 Days, 1 Day & Day-Of</div>
+
+                <div class="extracted-grid">
+                  <div class="extracted-item">
+                    <div class="extracted-item-label">Event Date</div>
+                    <div class="extracted-item-val" id="resStart">Oct 28, 2026</div>
+                  </div>
+                  <div class="extracted-item">
+                    <div class="extracted-item-label">Deadline</div>
+                    <div class="extracted-item-val" id="resDeadline" style="color:#DC2626;">Oct 22, 2026</div>
+                  </div>
+                  <div class="extracted-item">
+                    <div class="extracted-item-label">Location / Mode</div>
+                    <div class="extracted-item-val" id="resMode">Offline • Auditorium</div>
+                  </div>
+                  <div class="extracted-item">
+                    <div class="extracted-item-label">Local Alarms</div>
+                    <div class="extracted-item-val" id="resReminders">3 Days, 1 Day & Day-Of</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -489,15 +508,15 @@ Register now: https://siesgst.edu.in/hackathon2026</textarea>
             <div class="bento-icon-wrapper" aria-hidden="true">⚡</div>
             <h3 class="bento-title">Native Android Share Sheet Extraction</h3>
             <p class="bento-desc">
-              Highlight any forwarded WhatsApp announcement or tap "Share" directly from WhatsApp, Telegram, or Gmail. Vanko receives the raw text, parses it via Llama 3 AI in 400 milliseconds, and schedules exact alarms without opening separate apps.
+              Highlight any forwarded WhatsApp announcement or tap "Share" directly from WhatsApp, Telegram, or Gmail. Vanko receives the raw text, parses it with high-speed on-device and cloud AI in under 400 milliseconds, and schedules exact alarms without opening separate apps.
             </p>
             <span class="bento-tag">AI Powered • 0.4s Latency</span>
           </article>
 
-          <!-- Card 2: SIES GST Campus Feed -->
+          <!-- Card 2: Campus Community Feed -->
           <article class="bento-card">
             <div class="bento-icon-wrapper" aria-hidden="true">🏛️</div>
-            <h3 class="bento-title">SIES GST Community Hub</h3>
+            <h3 class="bento-title">Campus Community Hub</h3>
             <p class="bento-desc">
               Browse official college fests, technical chapter hackathons, and guest lectures verified by campus admins. Tap "I'm Going" to see which of your classmates are attending.
             </p>
@@ -541,13 +560,13 @@ Register now: https://siesgst.edu.in/hackathon2026</textarea>
         <div class="testimonials-grid">
           <div class="testimonial-card">
             <p class="testimonial-quote">
-              "Our class WhatsApp group has 80+ messages every morning. Vanko let me share a 4-paragraph CSI hackathon notice directly into my calendar in literally 2 seconds with reminders set."
+              "Our class WhatsApp group has 80+ messages every morning. Vanko let me share a 4-paragraph hackathon notice directly into my calendar in literally 2 seconds with reminders set."
             </p>
             <div class="testimonial-author">
-              <div class="author-avatar">AK</div>
+              <div class="author-avatar">AP</div>
               <div class="author-info">
-                <strong>Aniket K.</strong>
-                <span>Computer Engineering, SIES GST</span>
+                <strong>Aryan P.</strong>
+                <span>Computer Engineering</span>
               </div>
             </div>
           </div>
@@ -557,10 +576,10 @@ Register now: https://siesgst.edu.in/hackathon2026</textarea>
               "The offline sync is the killer feature. Even when there's zero mobile network in the lower college labs, my phone alarms still ring on the exact morning of lab submissions."
             </p>
             <div class="testimonial-author">
-              <div class="author-avatar">PS</div>
+              <div class="author-avatar">VS</div>
               <div class="author-info">
-                <strong>Pooja S.</strong>
-                <span>Information Technology, Batch 2026</span>
+                <strong>Vivek S.</strong>
+                <span>Information Technology</span>
               </div>
             </div>
           </div>
@@ -570,9 +589,9 @@ Register now: https://siesgst.edu.in/hackathon2026</textarea>
               "Being able to see which classmates are going to technical workshops before signing up makes organizing team hackathon entries effortless."
             </p>
             <div class="testimonial-author">
-              <div class="author-avatar">RM</div>
+              <div class="author-avatar">P</div>
               <div class="author-info">
-                <strong>Rohan M.</strong>
+                <strong>Prathamesh</strong>
                 <span>Electronics & Telecommunication</span>
               </div>
             </div>
@@ -600,7 +619,7 @@ Register now: https://siesgst.edu.in/hackathon2026</textarea>
               <span class="faq-toggle-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer">
-              Simply highlight any message in WhatsApp or Telegram, tap the Share icon, and select Vanko. Our edge-accelerated Llama 3 AI parser analyzes the unstructured text in ~400 milliseconds, extracts event titles, dates, deadlines, venues, and registration URLs, and creates a ready-to-save calendar event with automatic reminders.
+              Simply highlight any message in WhatsApp or Telegram, tap the Share icon, and select Vanko. Our high-speed AI parser analyzes the unstructured text in ~400 milliseconds, extracts event titles, dates, deadlines, venues, and registration URLs, and creates a ready-to-save calendar event with automatic reminders.
             </div>
           </div>
 
@@ -640,11 +659,11 @@ Register now: https://siesgst.edu.in/hackathon2026</textarea>
           <!-- Q5 -->
           <div class="faq-item">
             <button class="faq-question" aria-expanded="false">
-              <span>Can I use Vanko if I am not from SIES GST?</span>
+              <span>Can I use Vanko regardless of which college or university I attend?</span>
               <span class="faq-toggle-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer">
-              Absolutely. While SIES GST students get access to an exclusive verified campus event feed and club announcements, students from any engineering college or university in India can use Vanko's AI notice parser and personal calendar planner.
+              Yes, absolutely! Vanko is designed for students across all engineering colleges, universities, and institutions. Anyone can use the high-speed AI notice parser, personal calendar planner, and offline reminder alarms. You can also connect to verified campus feeds and announcements for your campus.
             </div>
           </div>
 
@@ -688,18 +707,18 @@ Register now: https://siesgst.edu.in/hackathon2026</textarea>
               <span class="faq-toggle-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer">
-              Yes. Verified campus administrators and student committee leaders can publish verified announcements to the SIES GST Community Feed and dispatch instant push notifications to all registered students.
+              Yes. Verified campus administrators and student committee leaders can publish verified announcements to the campus community feed and dispatch instant push notifications to all registered students.
             </div>
           </div>
 
           <!-- Q10 -->
           <div class="faq-item">
             <button class="faq-question" aria-expanded="false">
-              <span>How do I delete my account if I graduate?</span>
+              <span>How can I permanently delete my account and data at any time?</span>
               <span class="faq-toggle-icon" aria-hidden="true">+</span>
             </button>
             <div class="faq-answer">
-              You can permanently delete your account anytime from within Settings > Delete Account, or through our public web deletion portal at vanko-api.vanko-app.workers.dev/delete-account using email verification. All personal data is wiped permanently.
+              You can permanently delete your account and all personal event data at any time directly in the app via Settings > Delete Account, or through our public web deletion portal using email verification. In full compliance with data privacy regulations, all your account records, notifications, and stored schedules are permanently and immediately purged.
             </div>
           </div>
         </div>
@@ -757,7 +776,7 @@ Register now: https://siesgst.edu.in/hackathon2026</textarea>
       </div>
 
       <div class="footer-bottom">
-        <span>© 2026 Vanko. Crafted with care for college students & SIES Graduate School of Technology.</span>
+        <span>© 2026 Vanko. Crafted with care for college and university students everywhere.</span>
         <span>Version 1.0.2 • DPDP 2023 Compliant</span>
       </div>
     </div>

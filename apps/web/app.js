@@ -63,23 +63,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 4. Sample Notices for Live AI Demo Simulator
+  // 4. Sample Notices for Live AI Demo Simulator (Sanitized, generic campus context)
   const sampleNotices = {
     hackathon: {
-      text: `🚀 SIES GST TECH INNOVATION HACKATHON 2026!\nOrganized by CSI & IEEE Student Branch.\n\nDate: 28th - 29th October 2026\nVenue: College Auditorium & Tech Labs (Offline Mode)\nRegistration Deadline: 22nd October 2026, 11:59 PM IST\nPrizes worth ₹50,000 + Internship Opportunities!\nRegister now: https://siesgst.edu.in/hackathon2026`,
+      text: `🚀 ANNUAL TECH INNOVATION HACKATHON 2026!\nOrganized by Technical Student Council.\n\nDate: 28th - 29th October 2026\nVenue: Campus Auditorium & Tech Labs (Offline Mode)\nRegistration Deadline: 22nd October 2026, 11:59 PM IST\nPrizes worth ₹50,000 + Internship Opportunities!\nRegister now: https://campus-hackathon.edu/2026`,
       result: {
-        title: "SIES GST Tech Innovation Hackathon",
+        title: "Annual Tech Innovation Hackathon",
         type: "Hackathon",
         start: "Oct 28, 2026",
         end: "Oct 29, 2026",
         deadline: "Oct 22, 2026",
         mode: "Offline • Auditorium",
-        link: "siesgst.edu.in/hackathon2026",
+        link: "campus-hackathon.edu/2026",
         reminders: "3 Days, 1 Day & Day-Of Alarms"
       }
     },
     workshop: {
-      text: `📢 Hands-on Workshop on Generative AI & Next.js 15\nPresented by Student Council.\nWhen: 25th October 2026 at 3:30 PM\nWhere: Lab 304, IT Department (Hybrid Mode)\nSeats limited to 60 students only. Certificate provided.\nRegister: https://vanko.app/rsvp/genai-sies`,
+      text: `📢 Hands-on Workshop on Generative AI & Next.js 15\nPresented by Student Council.\nWhen: 25th October 2026 at 3:30 PM\nWhere: Lab 304, IT Department (Hybrid Mode)\nSeats limited to 60 students only. Certificate provided.\nRegister: https://vanko.app/rsvp/genai-workshop`,
       result: {
         title: "Generative AI & Next.js 15 Workshop",
         type: "Workshop",
@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
         end: "Oct 25, 2026 • 6:00 PM",
         deadline: "Oct 24, 2026",
         mode: "Hybrid • Lab 304",
-        link: "vanko.app/rsvp/genai-sies",
+        link: "vanko.app/rsvp/genai-workshop",
         reminders: "1 Day & 2 Hours Prior Alarms"
       }
     },
@@ -117,9 +117,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const resDeadline = document.getElementById('resDeadline');
   const resMode = document.getElementById('resMode');
   const resReminders = document.getElementById('resReminders');
-  const resCard = document.getElementById('extractedResultCard');
+  const demoIdleState = document.getElementById('demoIdleState');
+  const extractedContentWrapper = document.getElementById('extractedContentWrapper');
 
-  // Handle sample pill clicks
+  // Reset to idle placeholder state (does NOT auto-display card)
+  function resetToIdleState() {
+    if (demoIdleState) demoIdleState.style.display = 'flex';
+    if (extractedContentWrapper) extractedContentWrapper.style.display = 'none';
+  }
+
+  // Handle sample pill clicks: ONLY populates textarea, does NOT display card automatically
   samplePills.forEach(pill => {
     pill.addEventListener('click', () => {
       samplePills.forEach(p => p.classList.remove('active'));
@@ -127,41 +134,82 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const sampleKey = pill.getAttribute('data-sample');
       const data = sampleNotices[sampleKey];
-      if (data) {
+      if (data && textarea) {
         textarea.value = data.text;
-        triggerExtraction(data.result);
+        resetToIdleState();
       }
     });
   });
 
-  // Handle Extract button click
+  // Reset to idle if user modifies textarea
+  if (textarea) {
+    textarea.addEventListener('input', () => {
+      resetToIdleState();
+    });
+  }
+
+  // Handle Extract button click: parses and displays card only when clicked
   if (extractBtn) {
     extractBtn.addEventListener('click', () => {
       const activePill = document.querySelector('.sample-pill.active');
       const sampleKey = activePill ? activePill.getAttribute('data-sample') : 'hackathon';
-      const data = sampleNotices[sampleKey] || sampleNotices.hackathon;
-      triggerExtraction(data.result);
+      const textVal = textarea ? textarea.value.trim() : '';
+
+      // Determine result data
+      let resultData;
+      if (sampleNotices[sampleKey] && textVal === sampleNotices[sampleKey].text.trim()) {
+        resultData = sampleNotices[sampleKey].result;
+      } else {
+        // Smart fallback parser for customized user input
+        const lower = textVal.toLowerCase();
+        let detectedType = 'Campus Event';
+        if (lower.includes('hackathon') || lower.includes('coding')) detectedType = 'Hackathon';
+        else if (lower.includes('workshop') || lower.includes('seminar') || lower.includes('hands-on')) detectedType = 'Workshop';
+        else if (lower.includes('exam') || lower.includes('submission') || lower.includes('deadline')) detectedType = 'Academic Deadline';
+
+        const lines = textVal.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        let extractedTitle = lines[0] ? lines[0].replace(/[🚀📢⚠️🚨🎯]/g, '').trim() : 'Custom Campus Event';
+        if (extractedTitle.length > 45) extractedTitle = extractedTitle.substring(0, 42) + '...';
+
+        resultData = {
+          title: extractedTitle,
+          type: detectedType,
+          start: "Upcoming Scheduled Date",
+          deadline: "Registration Deadline Included",
+          mode: lower.includes('online') ? 'Online Session' : 'Campus / Department Lab',
+          link: "Extracted from notice",
+          reminders: "3 Days, 24 Hours & Day-Of Alarms"
+        };
+      }
+
+      // Visual feedback: parsing animation on the button
+      const originalBtnHTML = extractBtn.innerHTML;
+      extractBtn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 0.8s linear infinite;">
+          <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+          <path d="M12 2a10 10 0 0 1 10 10"/>
+        </svg>
+        Parsing Notice...
+      `;
+      extractBtn.style.pointerEvents = 'none';
+
+      setTimeout(() => {
+        if (resTitle) resTitle.textContent = resultData.title;
+        if (resType) resType.textContent = resultData.type;
+        if (resStart) resStart.textContent = resultData.start;
+        if (resDeadline) resDeadline.textContent = resultData.deadline;
+        if (resMode) resMode.textContent = resultData.mode;
+        if (resReminders) resReminders.textContent = resultData.reminders;
+
+        // Reveal card and hide idle state
+        if (demoIdleState) demoIdleState.style.display = 'none';
+        if (extractedContentWrapper) extractedContentWrapper.style.display = 'flex';
+
+        // Restore button state
+        extractBtn.innerHTML = originalBtnHTML;
+        extractBtn.style.pointerEvents = 'auto';
+      }, 300);
     });
-  }
-
-  function triggerExtraction(result) {
-    if (!resCard) return;
-    
-    // Smooth transition
-    resCard.style.opacity = '0.4';
-    resCard.style.transform = 'scale(0.98)';
-
-    setTimeout(() => {
-      if (resTitle) resTitle.textContent = result.title;
-      if (resType) resType.textContent = result.type;
-      if (resStart) resStart.textContent = result.start;
-      if (resDeadline) resDeadline.textContent = result.deadline;
-      if (resMode) resMode.textContent = result.mode;
-      if (resReminders) resReminders.textContent = result.reminders;
-
-      resCard.style.opacity = '1';
-      resCard.style.transform = 'scale(1)';
-    }, 250);
   }
 
   // 5. Mobile Deep-linking Detection
@@ -179,18 +227,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 6. Smooth scroll for anchor links
-  document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+  // 6. Smooth scroll for anchor links (works with both #hash and /#hash on homepage)
+  document.querySelectorAll('a[href^="#"], a[href^="/#"]').forEach(anchor => {
     anchor.addEventListener('click', function(e) {
-      const targetId = this.getAttribute('href');
-      if (targetId && targetId !== '#') {
-        const targetElement = document.querySelector(targetId);
-        if (targetElement) {
-          e.preventDefault();
-          targetElement.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start'
-          });
+      const href = this.getAttribute('href');
+      const hashIndex = href.indexOf('#');
+      if (hashIndex !== -1) {
+        const targetId = href.substring(hashIndex);
+        const isHomePage = window.location.pathname === '/' || window.location.pathname.endsWith('index.html') || window.location.pathname === '';
+        if (targetId && targetId !== '#' && isHomePage) {
+          const targetElement = document.querySelector(targetId);
+          if (targetElement) {
+            e.preventDefault();
+            targetElement.scrollIntoView({
+              behavior: 'smooth',
+              block: 'start'
+            });
+            if (history.pushState) {
+              history.pushState(null, null, targetId);
+            }
+          }
         }
       }
     });
