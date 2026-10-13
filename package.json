@@ -19,6 +19,7 @@
     "mobile:web": "npm --workspace=apps/mobile run web",
     "build:shared": "npm --workspace=packages/shared run build",
     "postinstall": "npm --workspace=packages/shared run build && node scripts/patch-rn.js",
+    "eas-build-pre-install": "npm config set legacy-peer-deps true",
     "typecheck": "npm --workspace=packages/shared run typecheck && npm --workspace=apps/mobile run typecheck",
     "test:rules": "node scripts/test_firestore_rules.mjs",
     "test:rules:emulator": "firebase-tools emulators:exec --only firestore \"node scripts/test_firestore_rules.mjs\"",
