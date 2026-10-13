@@ -228,7 +228,7 @@ export async function queryCollegePushTokens(
   college: string,
   env: Env
 ): Promise<Array<{ uid: string; pushToken: string }>> {
-  // Check memory cache (< 2 minutes old) to eliminate redundant Firestore reads during bursts
+  // 1. Check memory cache (< 2 minutes old) to eliminate redundant Firestore reads during bursts
   if (
     memoryRecipientsCache &&
     memoryRecipientsCache.college === college &&
@@ -237,11 +237,52 @@ export async function queryCollegePushTokens(
     return memoryRecipientsCache.data;
   }
 
+  const cleanCollegeKey = isSiesGstCollege(college)
+    ? 'SIES_GST'
+    : college.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50) || 'SIES_GST';
+
   const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_PROJECT_ID;
   const recipients: Array<{ uid: string; pushToken: string }> = [];
 
   try {
     const accessToken = await getGoogleFirestoreAccessToken(env);
+
+    // 2. High-Efficiency Tier: Check aggregated campus token document (/campusPushTokens/{college})
+    // Consumes exactly 1 Firestore document read instead of scanning thousands of user profiles!
+    try {
+      const aggDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/campusPushTokens/${cleanCollegeKey}`;
+      const aggRes = await fetch(aggDocUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (aggRes.ok) {
+        const aggData = (await aggRes.json()) as any;
+        const tokenMap = aggData?.fields?.tokens?.mapValue?.fields;
+        if (tokenMap && typeof tokenMap === 'object') {
+          for (const [uid, val] of Object.entries(tokenMap)) {
+            const token = (val as any)?.stringValue;
+            if (token && typeof token === 'string' && token.length > 10) {
+              recipients.push({ uid, pushToken: token });
+            }
+          }
+          if (recipients.length > 0) {
+            console.log(
+              `[PushQuery] Retrieved ${recipients.length} recipients via 1-read campus aggregation doc: "${cleanCollegeKey}"`
+            );
+            memoryRecipientsCache = {
+              college,
+              timestamp: Date.now(),
+              data: recipients,
+            };
+            return recipients;
+          }
+        }
+      }
+    } catch (aggErr) {
+      console.warn('[PushQuery] Aggregated token doc lookup note:', aggErr);
+    }
+
+    // 3. Fallback Tier: Scan users collection if aggregated doc does not exist yet
     let documents: any[] = [];
 
     // Strategy A: Try runQuery
@@ -313,6 +354,36 @@ export async function queryCollegePushTokens(
     }
 
     console.log(`[PushQuery] Found ${recipients.length} eligible push token recipients for college: "${college}" (scanned ${documents.length} users)`);
+
+    // Asynchronously sync the aggregated token document for future 1-read efficiency
+    if (recipients.length > 0) {
+      const tokenFields: Record<string, { stringValue: string }> = {};
+      for (const r of recipients.slice(0, 5000)) {
+        tokenFields[r.uid] = { stringValue: r.pushToken };
+      }
+
+      fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/campusPushTokens/${cleanCollegeKey}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fields: {
+              college: { stringValue: college },
+              updatedAt: { stringValue: new Date().toISOString() },
+              tokens: {
+                mapValue: {
+                  fields: tokenFields,
+                },
+              },
+            },
+          }),
+        }
+      ).catch(() => {});
+    }
   } catch (err: any) {
     console.error('[PushQuery] Exception querying student push tokens:', err?.message || err);
   }
@@ -357,6 +428,45 @@ export async function pruneDeadTokens(
           },
         }),
       });
+    }
+
+    // Also clean up from aggregated campus token document
+    const aggUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/campusPushTokens/SIES_GST`;
+    const aggRes = await fetch(aggUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (aggRes.ok) {
+      const aggData = (await aggRes.json()) as any;
+      const currentTokens = aggData?.fields?.tokens?.mapValue?.fields;
+      if (currentTokens && typeof currentTokens === 'object') {
+        let changed = false;
+        for (const uid of uids) {
+          if (currentTokens[uid]) {
+            delete currentTokens[uid];
+            changed = true;
+          }
+        }
+        if (changed) {
+          await fetch(aggUrl, {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              fields: {
+                college: { stringValue: 'SIES_GST' },
+                updatedAt: { stringValue: new Date().toISOString() },
+                tokens: {
+                  mapValue: {
+                    fields: currentTokens,
+                  },
+                },
+              },
+            }),
+          });
+        }
+      }
     }
   } catch {
     // Dead token pruning failed — safe to ignore

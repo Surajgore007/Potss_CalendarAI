@@ -22,8 +22,18 @@ import { syncAllEventNotifications, cancelEventNotifications, remapNotificationI
 import { isOnline, subscribeToNetworkStatus } from '../services/networkService';
 
 function normalizeEventData(e: CalendarEvent): CalendarEvent {
+  if (!e || typeof e !== 'object') {
+    return {} as CalendarEvent;
+  }
   return {
     ...e,
+    id: typeof e.id === 'string' ? e.id : String((e as any).id || ''),
+    title: typeof e.title === 'string' ? e.title : 'Untitled Event',
+    tags: Array.isArray(e.tags) ? e.tags : [],
+    reminder_offsets: Array.isArray(e.reminder_offsets) ? e.reminder_offsets : [4320, 1440, 0],
+    status: (['upcoming', 'past', 'registered', 'skipped'].includes(e.status) ? e.status : 'upcoming') as any,
+    type: (['hackathon', 'ctf', 'meetup', 'workshop', 'deadline', 'other'].includes(e.type) ? e.type : 'other') as any,
+    mode: (['online', 'offline', 'hybrid'].includes(e.mode) ? e.mode : 'offline') as any,
     event_start_date: normalizeDateString(e.event_start_date) || e.event_start_date || null,
     event_end_date: normalizeDateString(e.event_end_date) || e.event_end_date || null,
     registration_deadline: normalizeDateString(e.registration_deadline) || e.registration_deadline || null,

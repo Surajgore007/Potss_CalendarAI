@@ -239,9 +239,11 @@ export function subscribeToUserEvents(
   const db = getDb();
   // Query collection directly without orderBy so documents missing created_at are never omitted
   const eventsCol = collection(db, 'users', uid, 'events');
+  // Bound query to protect free-tier Spark quota against unbounded document reads
+  const q = query(eventsCol, limit(150));
 
   return onSnapshot(
-    eventsCol,
+    q,
     (snapshot: QuerySnapshot<DocumentData>) => {
       const events: CalendarEvent[] = [];
       snapshot.forEach((docSnap) => {
@@ -324,11 +326,12 @@ export function subscribeToCommunityEvents(
   onError?: (err: Error) => void
 ): Unsubscribe {
   const db = getDb();
-  // Query collection directly without orderBy so documents missing created_at are never omitted
+  // Bound community events to 60 items max to prevent quota exhaustion on free tier
   const colRef = collection(db, 'communityEvents');
+  const q = query(colRef, limit(60));
 
   return onSnapshot(
-    colRef,
+    q,
     (snapshot) => {
       const list: CommunityEvent[] = [];
       snapshot.forEach((docSnap) => {

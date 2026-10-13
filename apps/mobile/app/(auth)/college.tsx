@@ -37,9 +37,26 @@ import { isOnline, subscribeToNetworkStatus } from '../../src/services/networkSe
 const SIES_GST_COMMUNITY_CACHE_KEY = '@vanko_cached_community_events_SIES_GST';
 
 function normalizeCommunityEvent(ev: CommunityEvent): CommunityEvent {
+  if (!ev || typeof ev !== 'object') {
+    return {} as CommunityEvent;
+  }
+  const attendeesList = Array.isArray(ev.attendees) ? ev.attendees : [];
   return {
     ...ev,
-    event_start_date: normalizeDateString(ev.event_start_date) || ev.event_start_date,
+    id: typeof ev.id === 'string' ? ev.id : String((ev as any).id || ''),
+    title: typeof ev.title === 'string' ? ev.title : 'Community Event',
+    attendees: attendeesList,
+    attendeesCount:
+      typeof ev.attendeesCount === 'number'
+        ? ev.attendeesCount
+        : attendeesList.length,
+    attendeePreviews:
+      ev.attendeePreviews && typeof ev.attendeePreviews === 'object'
+        ? ev.attendeePreviews
+        : {},
+    tags: Array.isArray(ev.tags) ? ev.tags : [],
+    college: ev.college || 'SIES_GST',
+    event_start_date: normalizeDateString(ev.event_start_date) || ev.event_start_date || '',
     event_end_date: normalizeDateString(ev.event_end_date) || ev.event_end_date || null,
     registration_deadline: normalizeDateString(ev.registration_deadline) || ev.registration_deadline || null,
   };

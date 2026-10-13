@@ -1,0 +1,29 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "communityEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "college", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "college", "order": "ASCENDING" },
+        { "fieldPath": "event_start_date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "collegeAnnouncements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "college", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

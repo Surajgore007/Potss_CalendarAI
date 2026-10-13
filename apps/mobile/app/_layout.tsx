@@ -20,6 +20,10 @@ import { registerForPushNotificationsAsync } from '../src/services/pushNotificat
 import { OnboardingModal } from '../src/components/OnboardingModal';
 import { CampusAffiliationModal } from '../src/components/CampusAffiliationModal';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
+import { initGlobalErrorTracking } from '../src/services/telemetry';
+
+// Initialize global crash & error telemetry immediately
+initGlobalErrorTracking();
 
 // Initialize notification behavior immediately on module load so notifications are never dropped
 if (Platform.OS !== 'web') {

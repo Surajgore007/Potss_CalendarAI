@@ -133,6 +133,11 @@ service cloud.firestore {
       allow write: if isPlatformAdmin();
     }
 
+    // Aggregated campus push tokens cache: Admin / Worker only
+    match /campusPushTokens/{college} {
+      allow read, write: if isPlatformAdmin();
+    }
+
     // Feedback submissions: strictly worker (service account) only. Client SDK has zero read or write.
     match /feedback/{docId} {
       allow read, write: if false;
