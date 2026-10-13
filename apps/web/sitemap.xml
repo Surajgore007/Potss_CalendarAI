@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  
+  <!-- Homepage -->
+  <url>
+    <loc>https://vanko-app.vercel.app/</loc>
+    <lastmod>2026-10-13</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://vanko-app.vercel.app/assets/feature_graphic_1024x500.jpg</image:loc>
+      <image:title>Vanko Smart AI Campus Calendar</image:title>
+      <image:caption>Vanko AI Calendar for College Students</image:caption>
+    </image:image>
+  </url>
+
+  <!-- Blog Hub -->
+  <url>
+    <loc>https://vanko-app.vercel.app/blog</loc>
+    <lastmod>2026-10-13</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- Article 1: WhatsApp notice extraction -->
+  <url>
+    <loc>https://vanko-app.vercel.app/blog/how-to-extract-whatsapp-notices-to-calendar</loc>
+    <lastmod>2026-10-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- Article 2: Best calendar apps for engineering students -->
+  <url>
+    <loc>https://vanko-app.vercel.app/blog/best-calendar-apps-for-engineering-students</loc>
+    <lastmod>2026-10-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- Privacy Policy -->
+  <url>
+    <loc>https://vanko-app.vercel.app/privacy</loc>
+    <lastmod>2026-10-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+  <!-- Terms of Service -->
+  <url>
+    <loc>https://vanko-app.vercel.app/terms</loc>
+    <lastmod>2026-10-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+</urlset>

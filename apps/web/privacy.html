@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Vanko AI Campus Calendar</title>
+  <meta name="description" content="Read Vanko's Privacy Policy. Learn how we protect student data, comply with DPDP 2023, and provide 100% transparent zero-tracking calendar sync.">
+  <link rel="canonical" href="https://vanko-app.vercel.app/privacy">
+  <link rel="icon" type="image/png" href="/assets/vanko-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <div class="bg-ambient"></div>
+
+  <header class="navbar">
+    <div class="container nav-inner">
+      <a href="/" class="brand">
+        <img src="/assets/vanko-icon.png" alt="Vanko Icon" class="brand-icon" width="38" height="38">
+        <span class="brand-name">Vanko</span>
+      </a>
+      <a href="https://play.google.com/store/apps/details?id=com.suraj.eventpulse&utm_source=website&utm_medium=organic&utm_campaign=seo_privacy" target="_blank" rel="noopener" class="nav-cta">
+        Get App
+      </a>
+    </div>
+  </header>
+
+  <main style="padding: 70px 0 100px;">
+    <div class="container container-narrow">
+      <span class="section-label">Legal & Compliance</span>
+      <h1 class="section-title">Privacy Policy</h1>
+      <p style="color: #64748B; font-size: 0.9rem; margin-bottom: 40px;">Effective Date: October 13, 2026 • Digital Personal Data Protection (DPDP) Act 2023 Compliant</p>
+
+      <div style="background: #FFFFFF; border: 1px solid var(--titanium-border); border-radius: var(--radius-xl); padding: 40px; box-shadow: var(--shadow-card); line-height: 1.8; color: var(--text-secondary);">
+        <h2 style="color: var(--text-primary); font-size: 1.3rem; margin-bottom: 12px;">1. Overview</h2>
+        <p style="margin-bottom: 24px;">Vanko ("we", "our", or "the app") provides a smart campus calendar and event extraction utility for students. We believe privacy is a fundamental human right. We do not sell your personal data, we do not run third-party advertising trackers, and our architecture minimizes data collection by design.</p>
+
+        <h2 style="color: var(--text-primary); font-size: 1.3rem; margin-bottom: 12px;">2. Information We Process</h2>
+        <p style="margin-bottom: 24px;">
+          • <strong>Account Authentication:</strong> Google Sign-In provides your basic profile (UID, email address, display name) secured by Google Firebase Auth.<br>
+          • <strong>Calendar Events:</strong> Events you extract or create are stored locally on your device (AsyncStorage) and synchronized to your private Firestore account (/users/{uid}/events).<br>
+          • <strong>Campus Affiliation:</strong> Your chosen college tenant (e.g. SIES GST) to deliver campus-wide event broadcasts.<br>
+          • <strong>Push Tokens:</strong> Expo Push Tokens for high-priority campus notices.
+        </p>
+
+        <h2 style="color: var(--text-primary); font-size: 1.3rem; margin-bottom: 12px;">3. AI Event Extraction Privacy</h2>
+        <p style="margin-bottom: 24px;">When you share or paste unstructured text into Vanko, text is transmitted via TLS 1.3 encrypted HTTPS to our Cloudflare Worker backend. Only the date, title, time, and link fields are extracted. Raw shared message contents are not permanently stored on disk or used to train third-party AI models.</p>
+
+        <h2 style="color: var(--text-primary); font-size: 1.3rem; margin-bottom: 12px;">4. Data Deletion & Your Rights</h2>
+        <p style="margin-bottom: 24px;">Under the Indian DPDP Act 2023 and Google Play Store policies, you retain the complete right to data erasure at any time. You can delete your account and all associated events instantly from the app settings or via our public web deletion portal at <a href="https://vanko-api.vanko-app.workers.dev/delete-account" target="_blank" rel="noopener" style="color: #0F172A; font-weight: 600;">vanko-api.vanko-app.workers.dev/delete-account</a>.</p>
+
+        <h2 style="color: var(--text-primary); font-size: 1.3rem; margin-bottom: 12px;">5. Contact Information</h2>
+        <p>If you have any questions or data privacy inquiries, contact the developer at <strong>suraj.gore3011@gmail.com</strong>.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-bottom">
+        <span>© 2026 Vanko. Smart Campus Calendar & Event Pulse.</span>
+        <span>Version 1.0.2 • DPDP 2023 Compliant</span>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

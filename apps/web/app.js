@@ -1,7 +1,69 @@
 // Vanko Web Showcase JavaScript Logic
 
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. Sample Notices for Live AI Demo Simulator
+  // 1. Google Analytics 4 Event Tracking for Play Store conversions
+  function trackPlayStoreClick(locationTag) {
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', 'click_play_store', {
+        event_category: 'conversion',
+        event_label: locationTag || 'generic',
+        transport_type: 'beacon'
+      });
+    }
+  }
+
+  document.querySelectorAll('a[href*="play.google.com"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const locationTag = btn.getAttribute('data-utm-location') || btn.id || 'button';
+      trackPlayStoreClick(locationTag);
+    });
+  });
+
+  // 2. Mobile Smart App Banner
+  const smartBanner = document.getElementById('smartAppBanner');
+  const bannerClose = document.getElementById('smartBannerClose');
+  const bannerDismissed = localStorage.getItem('vanko_smart_banner_dismissed');
+
+  if (smartBanner && !bannerDismissed && window.innerWidth <= 768) {
+    smartBanner.classList.add('visible');
+  }
+
+  if (bannerClose && smartBanner) {
+    bannerClose.addEventListener('click', () => {
+      smartBanner.classList.remove('visible');
+      localStorage.setItem('vanko_smart_banner_dismissed', 'true');
+    });
+  }
+
+  // 3. FAQ Accordion Accessibility & Toggles
+  const faqItems = document.querySelectorAll('.faq-item');
+  faqItems.forEach(item => {
+    const btn = item.querySelector('.faq-question');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const isActive = item.classList.contains('active');
+        
+        // Optional: Close others (accordion style)
+        faqItems.forEach(other => {
+          if (other !== item) {
+            other.classList.remove('active');
+            const otherBtn = other.querySelector('.faq-question');
+            if (otherBtn) otherBtn.setAttribute('aria-expanded', 'false');
+          }
+        });
+
+        if (isActive) {
+          item.classList.remove('active');
+          btn.setAttribute('aria-expanded', 'false');
+        } else {
+          item.classList.add('active');
+          btn.setAttribute('aria-expanded', 'true');
+        }
+      });
+    }
+  });
+
+  // 4. Sample Notices for Live AI Demo Simulator
   const sampleNotices = {
     hackathon: {
       text: `🚀 SIES GST TECH INNOVATION HACKATHON 2026!\nOrganized by CSI & IEEE Student Branch.\n\nDate: 28th - 29th October 2026\nVenue: College Auditorium & Tech Labs (Offline Mode)\nRegistration Deadline: 22nd October 2026, 11:59 PM IST\nPrizes worth ₹50,000 + Internship Opportunities!\nRegister now: https://siesgst.edu.in/hackathon2026`,
@@ -90,20 +152,19 @@ document.addEventListener('DOMContentLoaded', () => {
     resCard.style.transform = 'scale(0.98)';
 
     setTimeout(() => {
-      resTitle.textContent = result.title;
-      resType.textContent = result.type;
-      resStart.textContent = result.start;
-      resDeadline.textContent = result.deadline;
-      resMode.textContent = result.mode;
-      resReminders.textContent = result.reminders;
+      if (resTitle) resTitle.textContent = result.title;
+      if (resType) resType.textContent = result.type;
+      if (resStart) resStart.textContent = result.start;
+      if (resDeadline) resDeadline.textContent = result.deadline;
+      if (resMode) resMode.textContent = result.mode;
+      if (resReminders) resReminders.textContent = result.reminders;
 
       resCard.style.opacity = '1';
       resCard.style.transform = 'scale(1)';
     }, 250);
   }
 
-  // 2. Mobile Deep-linking Detection
-  // If user is browsing on Android, allow direct market:// intent
+  // 5. Mobile Deep-linking Detection
   const isAndroid = /Android/i.test(navigator.userAgent);
   const playStoreButtons = document.querySelectorAll('.btn-playstore');
   
@@ -112,13 +173,13 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', (e) => {
         // Fall back to web URL if market intent fails
         setTimeout(() => {
-          window.location.href = 'https://play.google.com/store/apps/details?id=com.suraj.eventpulse';
+          window.location.href = btn.getAttribute('href');
         }, 500);
       });
     });
   }
 
-  // 3. Smooth scroll for anchor links
+  // 6. Smooth scroll for anchor links
   document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     anchor.addEventListener('click', function(e) {
       const targetId = this.getAttribute('href');

@@ -1,0 +1,23 @@
+{
+  "name": "Vanko: Smart AI Campus Calendar",
+  "short_name": "Vanko",
+  "description": "Smart AI Campus Calendar & Event Pulse for College Students",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    {
+      "src": "/assets/vanko-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/app_icon_512x512.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
