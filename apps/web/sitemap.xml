@@ -10,7 +10,7 @@
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
     <image:image>
-      <image:loc>https://vanko-app.vercel.app/assets/feature_graphic_1024x500.jpg</image:loc>
+      <image:loc>https://vanko-app.vercel.app/assets/feature_image.png</image:loc>
       <image:title>Vanko Smart AI Campus Calendar</image:title>
       <image:caption>Vanko AI Calendar for College Students</image:caption>
     </image:image>
