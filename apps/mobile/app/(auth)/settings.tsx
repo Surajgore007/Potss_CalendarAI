@@ -20,6 +20,7 @@ import { GlassCard } from '../../src/components/ui/GlassCard';
 import { GlassButton } from '../../src/components/ui/GlassButton';
 import { subscribeToLiveUserCount } from '@eventpulse/shared';
 import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 import { FeedbackModal } from '../../src/components/FeedbackModal';
 import { AdminFeedbackModal } from '../../src/components/AdminFeedbackModal';
 import { DeleteAccountModal } from '../../src/components/DeleteAccountModal';
@@ -347,7 +348,7 @@ export default function SettingsScreen() {
           </GlassCard>
 
           <Text style={styles.versionFooter} numberOfLines={1}>
-            Vanko v1.0.0
+            Vanko v{Constants.expoConfig?.version ?? '1.0.2'}
           </Text>
         </ScrollView>
 
