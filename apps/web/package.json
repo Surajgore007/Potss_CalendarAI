@@ -1,0 +1,10 @@
+{
+  "name": "vanko-web",
+  "version": "1.0.2",
+  "private": true,
+  "description": "Vanko - Official Showcase & Landing Page",
+  "scripts": {
+    "start": "npx -y serve .",
+    "dev": "npx -y serve ."
+  }
+}
