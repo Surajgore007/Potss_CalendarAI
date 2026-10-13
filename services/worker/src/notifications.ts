@@ -216,11 +216,27 @@ export function matchesCollegeTenant(targetCollege: string | undefined, userColl
   return normTarget === normUser;
 }
 
+interface CachedRecipients {
+  college: string;
+  timestamp: number;
+  data: Array<{ uid: string; pushToken: string }>;
+}
+let memoryRecipientsCache: CachedRecipients | null = null;
+
 /** Query all students registered under college who have a valid Expo push token */
 export async function queryCollegePushTokens(
   college: string,
   env: Env
 ): Promise<Array<{ uid: string; pushToken: string }>> {
+  // Check memory cache (< 2 minutes old) to eliminate redundant Firestore reads during bursts
+  if (
+    memoryRecipientsCache &&
+    memoryRecipientsCache.college === college &&
+    Date.now() - memoryRecipientsCache.timestamp < 120_000
+  ) {
+    return memoryRecipientsCache.data;
+  }
+
   const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_PROJECT_ID;
   const recipients: Array<{ uid: string; pushToken: string }> = [];
 
@@ -301,6 +317,15 @@ export async function queryCollegePushTokens(
     console.error('[PushQuery] Exception querying student push tokens:', err?.message || err);
   }
 
+  // Populate in-memory recipient cache
+  if (recipients.length > 0) {
+    memoryRecipientsCache = {
+      college,
+      timestamp: Date.now(),
+      data: recipients,
+    };
+  }
+
   return recipients;
 }
 
@@ -310,6 +335,8 @@ export async function pruneDeadTokens(
   env: Env
 ): Promise<void> {
   if (uids.length === 0) return;
+  // Invalidate recipient token cache so pruned tokens aren't reused
+  memoryRecipientsCache = null;
   const projectId = env.FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_PROJECT_ID;
 
   try {

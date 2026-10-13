@@ -1347,6 +1347,37 @@ export default {
       }
     }
 
+    // 9b. Anonymous Client Error Telemetry (Zero-Cost Crash Reporting)
+    if (request.method === 'POST' && (url.pathname === '/api/telemetry/error' || url.pathname === '/telemetry/error')) {
+      try {
+        const clientIp = request.headers.get('cf-connecting-ip') || 'anon';
+        // Sliding-window rate limit: max 10 error telemetry pings per IP per minute
+        if (!checkRateLimit(`error_telemetry_${clientIp}`, 10, 60)) {
+          return jsonResponse({ success: false, message: 'Rate limited' }, 429);
+        }
+
+        const body = (await request.json().catch(() => ({}))) as {
+          message?: string;
+          stack?: string;
+          componentStack?: string;
+          platform?: string;
+          version?: string;
+          timestamp?: string;
+        };
+
+        if (body.message) {
+          console.error(
+            `[AppCrash] v${body.version || '1.0.2'} (${body.platform || 'unknown'}): ${body.message}\n` +
+            `Stack: ${body.stack?.slice(0, 300) || 'none'}`
+          );
+        }
+
+        return jsonResponse({ success: true }, 200);
+      } catch {
+        return jsonResponse({ success: true }, 200); // Fail open: never break client telemetry
+      }
+    }
+
     // 10. Admin-Only Feedback Review (Gated strictly by Custom Claims)
     if (request.method === 'GET' && (url.pathname === '/api/admin/feedback' || url.pathname === '/admin/feedback')) {
       try {

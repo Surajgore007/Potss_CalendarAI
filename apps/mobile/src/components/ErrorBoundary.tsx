@@ -1,7 +1,8 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { colors, radii, shadows } from '../theme/tokens';
 
 interface Props {
@@ -30,7 +31,27 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // In production, send to monitoring service without throwing
+    try {
+      const workerUrl =
+        process.env.EXPO_PUBLIC_WORKER_URL ||
+        process.env.EXPO_PUBLIC_API_URL ||
+        'https://vanko-api.vanko-app.workers.dev';
+
+      fetch(`${workerUrl.replace(/\/$/, '')}/api/telemetry/error`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: error?.message || 'Unknown render error',
+          stack: error?.stack?.slice(0, 1000) || '',
+          componentStack: errorInfo?.componentStack?.slice(0, 1000) || '',
+          platform: Platform.OS,
+          version: Constants.expoConfig?.version ?? '1.0.2',
+          timestamp: new Date().toISOString(),
+        }),
+      }).catch(() => {});
+    } catch {
+      // Fail silent — never throw inside the ErrorBoundary
+    }
   }
 
   handleReset = () => {
