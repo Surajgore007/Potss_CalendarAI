@@ -193,6 +193,107 @@ body {
   background: #000000;
 }
 
+/* Mobile Hamburger Toggle */
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-hamburger {
+  display: none;
+  background: #FFFFFF;
+  border: 1px solid var(--titanium-border);
+  border-radius: 10px;
+  width: 42px;
+  height: 42px;
+  cursor: pointer;
+  padding: 0;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.nav-hamburger:hover {
+  background: var(--bg-secondary);
+}
+
+.hamburger-line {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--text-primary);
+  border-radius: 2px;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+}
+
+.nav-hamburger.active .hamburger-line:nth-child(1) {
+  transform: translateY(4px) rotate(45deg);
+}
+
+.nav-hamburger.active .hamburger-line:nth-child(2) {
+  transform: translateY(-4px) rotate(-45deg);
+}
+
+/* Mobile Navigation Dropdown Sheet */
+.mobile-nav-drawer {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #FFFFFF;
+  border-bottom: 1px solid var(--titanium-border);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+  padding: 18px 20px 24px;
+  z-index: 99;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+
+.mobile-nav-drawer.open {
+  display: block;
+  animation: slideDownNav 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDownNav {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.mobile-nav-links {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.mobile-nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.mobile-nav-link:hover, .mobile-nav-link:active {
+  background: var(--bg-secondary);
+  color: #000000;
+}
+
+.mobile-nav-footer {
+  padding-top: 14px;
+  border-top: 1px solid var(--titanium-border);
+}
+
 /* Hero Section */
 .hero-section {
   padding: 80px 0 100px;
@@ -1163,6 +1264,10 @@ body {
 
   .nav-links {
     display: none;
+  }
+
+  .nav-hamburger {
+    display: flex;
   }
 }
 

@@ -45,9 +45,46 @@
           <li><a href="/privacy" class="nav-link">Privacy</a></li>
         </ul>
       </nav>
-      <a href="https://play.google.com/store/apps/details?id=com.suraj.eventpulse&utm_source=website&utm_medium=organic&utm_campaign=seo_terms" target="_blank" rel="noopener" class="nav-cta">
-        Get App
-      </a>
+
+      <div class="nav-actions">
+        <a href="https://play.google.com/store/apps/details?id=com.suraj.eventpulse&utm_source=website&utm_medium=organic&utm_campaign=seo_terms" target="_blank" rel="noopener" class="nav-cta" data-utm-location="nav_cta">
+          Get App
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </a>
+
+        <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false">
+          <span class="hamburger-line"></span>
+          <span class="hamburger-line"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Navigation Drawer -->
+    <div class="mobile-nav-drawer" id="mobileNavDrawer" aria-hidden="true">
+      <ul class="mobile-nav-links">
+        <li><a href="/#demo-video" class="mobile-nav-link">Walkthrough</a></li>
+        <li><a href="/#ai-demo" class="mobile-nav-link">AI Simulator</a></li>
+        <li><a href="/#features" class="mobile-nav-link">Features</a></li>
+        <li><a href="/#faq" class="mobile-nav-link">FAQ</a></li>
+        <li><a href="/blog" class="mobile-nav-link">Blog</a></li>
+        <li><a href="/privacy" class="mobile-nav-link">Privacy</a></li>
+      </ul>
+      <div class="mobile-nav-footer">
+        <a href="https://play.google.com/store/apps/details?id=com.suraj.eventpulse&utm_source=website&utm_medium=organic&utm_campaign=seo_mobile_menu" target="_blank" rel="noopener" class="btn-playstore" style="width: 100%; justify-content: center;">
+          <svg class="play-icon" viewBox="0 0 512 512" fill="none" width="22" height="22" aria-hidden="true">
+            <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1z" fill="#EA4335"/>
+            <path d="M47 36.3c-6.8 7.3-10.7 18-10.7 31.7v376c0 13.7 3.9 24.4 10.7 31.7l3.2 3.1L274.6 254.4v-4.8L50.2 33.2l-3.2 3.1z" fill="#4285F4"/>
+            <path d="M325.3 277.7l60.1 60.1L104.6 499l220.7-221.3z" fill="#FBBC04"/>
+            <path d="M475.2 233.1l-89.8-51.6-60.1 60.1v28.8l60.1 60.1 89.8-51.6c17.5-10.1 17.5-35.7 0-45.8z" fill="#34A853"/>
+          </svg>
+          <div class="btn-playstore-text">
+            <span class="btn-playstore-sub">GET IT ON</span>
+            <span class="btn-playstore-main">Google Play</span>
+          </div>
+        </a>
+      </div>
     </div>
   </header>
 
@@ -98,5 +135,6 @@
     </div>
   </footer>
 
+  <script src="/app.js"></script>
 </body>
 </html>

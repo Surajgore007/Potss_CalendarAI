@@ -251,4 +251,48 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
+
+  // 7. Mobile Navigation Drawer Toggle
+  const hamburger = document.getElementById('navHamburger');
+  const mobileDrawer = document.getElementById('mobileNavDrawer');
+
+  if (hamburger && mobileDrawer) {
+    function openDrawer() {
+      mobileDrawer.classList.add('open');
+      mobileDrawer.setAttribute('aria-hidden', 'false');
+      hamburger.classList.add('active');
+      hamburger.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeDrawer() {
+      mobileDrawer.classList.remove('open');
+      mobileDrawer.setAttribute('aria-hidden', 'true');
+      hamburger.classList.remove('active');
+      hamburger.setAttribute('aria-expanded', 'false');
+    }
+
+    hamburger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = mobileDrawer.classList.contains('open');
+      if (isOpen) {
+        closeDrawer();
+      } else {
+        openDrawer();
+      }
+    });
+
+    // Close when tapping any link inside the mobile drawer
+    mobileDrawer.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => {
+        closeDrawer();
+      });
+    });
+
+    // Close when clicking outside the navbar
+    document.addEventListener('click', (e) => {
+      if (!mobileDrawer.contains(e.target) && !hamburger.contains(e.target)) {
+        closeDrawer();
+      }
+    });
+  }
 });
