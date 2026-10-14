@@ -1,6 +1,13 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "redirects": [
+    {
+      "source": "/download",
+      "destination": "https://play.google.com/store/apps/details?id=com.suraj.eventpulse",
+      "permanent": false
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
