@@ -67,6 +67,8 @@ export function ManualEventModal({
   const [endDate, setEndDate] = useState<string | null>(null);
   const [deadline, setDeadline] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
+  const [hasAlarm, setHasAlarm] = useState(false);
+  const [alarmOffsets, setAlarmOffsets] = useState<number[]>([120, 15]);
   const [location, setLocation] = useState('');
   const [registrationLink, setRegistrationLink] = useState('');
   const [tagsText, setTagsText] = useState('');
@@ -87,6 +89,8 @@ export function ManualEventModal({
     setEndDate(null);
     setDeadline(null);
     setTime(null);
+    setHasAlarm(false);
+    setAlarmOffsets([120, 15]);
     setLocation('');
     setRegistrationLink('');
     setTagsText('');
@@ -136,6 +140,9 @@ export function ManualEventModal({
         source_group: 'manual_entry',
         raw_text: `Manual event: ${cleanTitle}`,
         reminder_offsets: [4320, 1440, 0],
+        has_critical_alarm: hasAlarm,
+        alarm_offsets: alarmOffsets,
+        alarm_time_assumed: !time,
         status: 'upcoming',
       });
 
@@ -456,6 +463,70 @@ export function ManualEventModal({
                   )}
                 </View>
               </TouchableOpacity>
+            </View>
+
+            {/* Critical Deadline Alarm */}
+            <View style={styles.alarmBox}>
+              <View style={styles.alarmHeaderRow}>
+                <View style={styles.alarmLeftWrap}>
+                  <View style={[styles.alarmIconBadge, hasAlarm ? styles.alarmIconBadgeActive : styles.alarmIconBadgeInactive]}>
+                    <Ionicons
+                      name={hasAlarm ? "alarm" : "alarm-outline"}
+                      size={18}
+                      color={hasAlarm ? "#FFFFFF" : colors.textTertiary}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.alarmTitle}>CRITICAL DEADLINE ALARM</Text>
+                    <Text style={styles.alarmSub}>
+                      {hasAlarm
+                        ? "Rings a loud repeating alarm on your phone"
+                        : "Optional loud alarm for high-priority cutoffs"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Switch */}
+                <TouchableOpacity
+                  style={[styles.alarmSwitch, hasAlarm ? styles.alarmSwitchOn : styles.alarmSwitchOff]}
+                  onPress={() => setHasAlarm(!hasAlarm)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.alarmThumb, hasAlarm && styles.alarmThumbOn]} />
+                </TouchableOpacity>
+              </View>
+
+              {hasAlarm && (
+                <View style={styles.alarmConfigWrap}>
+                  <Text style={styles.alarmConfigLabel}>ALARM ESCALATION STAGES:</Text>
+                  <View style={styles.alarmPresetsRow}>
+                    {[
+                      { label: '2h & 15m (Default)', offsets: [120, 15] },
+                      { label: '1h & 15m', offsets: [60, 15] },
+                      { label: 'At Deadline Only', offsets: [0] },
+                    ].map((preset, idx) => {
+                      const isSel = JSON.stringify(alarmOffsets) === JSON.stringify(preset.offsets);
+                      return (
+                        <TouchableOpacity
+                          key={idx}
+                          style={[styles.alarmPresetChip, isSel && styles.alarmPresetChipActive]}
+                          onPress={() => setAlarmOffsets(preset.offsets)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.alarmPresetText, isSel && styles.alarmPresetTextActive]}>
+                            {preset.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {!time && (
+                    <Text style={styles.alarmNote}>
+                      ℹ️ Time not specified: assumed 11:59 PM. Alarm will ring at 9:59 PM.
+                    </Text>
+                  )}
+                </View>
+              )}
             </View>
 
             {/* Location */}
@@ -779,5 +850,114 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  alarmBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: radii.control,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E4E4E7',
+    marginBottom: 8,
+    gap: 10,
+  },
+  alarmHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  alarmLeftWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  alarmIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alarmIconBadgeActive: {
+    backgroundColor: '#D97706',
+  },
+  alarmIconBadgeInactive: {
+    backgroundColor: '#F4F4F5',
+  },
+  alarmTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    color: '#18181B',
+  },
+  alarmSub: {
+    fontSize: 11,
+    color: '#71717A',
+    marginTop: 2,
+  },
+  alarmSwitch: {
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  alarmSwitchOn: {
+    backgroundColor: '#D97706',
+  },
+  alarmSwitchOff: {
+    backgroundColor: '#D4D4D8',
+  },
+  alarmThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+  },
+  alarmThumbOn: {
+    alignSelf: 'flex-end',
+  },
+  alarmConfigWrap: {
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E4E4E7',
+    gap: 8,
+  },
+  alarmConfigLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#71717A',
+    letterSpacing: 0.4,
+  },
+  alarmPresetsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  alarmPresetChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#F4F4F5',
+    borderWidth: 1,
+    borderColor: '#E4E4E7',
+  },
+  alarmPresetChipActive: {
+    backgroundColor: '#D97706',
+    borderColor: '#B45309',
+  },
+  alarmPresetText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#52525B',
+  },
+  alarmPresetTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  alarmNote: {
+    fontSize: 11,
+    color: '#71717A',
+    lineHeight: 16,
   },
 });

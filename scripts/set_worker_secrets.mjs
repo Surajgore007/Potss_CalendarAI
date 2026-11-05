@@ -21,10 +21,10 @@ function putSecret(secretName, secretValue) {
   return new Promise((resolve, reject) => {
     console.log(`Setting wrangler secret ${secretName}...`);
     const isWindows = process.platform === 'win32';
-    const child = spawn('npx', ['wrangler', 'secret', 'put', secretName], {
+    const child = spawn(isWindows ? 'npx.cmd' : 'npx', ['wrangler', 'secret', 'put', secretName], {
       cwd: path.resolve(process.cwd(), 'services/worker'),
       stdio: ['pipe', 'inherit', 'inherit'],
-      shell: true,
+      shell: false,
     });
 
     child.stdin.write(secretValue);

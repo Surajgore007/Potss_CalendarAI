@@ -32,7 +32,7 @@ We collect and process strictly the minimum personal data required to deliver sm
    - Used exclusively to schedule and deliver 24-hour deadline reminders for events you have saved.
 4. **User-Initiated Feedback Submissions:**
    - Feedback category (bug, suggestion, complaint, other), message text, and optional screenshot image attachments voluntarily provided through the in-app feedback channel.
-   - Automatically accompanied by client platform (`android`/`ios`) and app version (`1.0.0`) to aid debugging.
+   - Automatically accompanied by client platform (`android`/`ios`) and app version (`1.0.3`) to aid debugging.
 
 ---
 

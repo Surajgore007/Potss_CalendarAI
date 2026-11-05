@@ -4,6 +4,7 @@ compatibility_date = "2024-02-01"
 
 [vars]
 ENVIRONMENT = "production"
+FIREBASE_PROJECT_ID = "calendarai-f5cd0"
 
 # Cloudflare Workers Cron Trigger: Automated deletion reconciliation & audit purging every 30 minutes
 [triggers]

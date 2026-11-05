@@ -33,6 +33,7 @@ import {
 import { isOnline } from '../services/networkService';
 import { registerForPushNotificationsAsync, unregisterPushTokenAsync } from '../services/pushNotificationService';
 import { syncAllEventNotifications } from '../services/notificationService';
+import { cancelAllCriticalAlarms } from '../services/alarmService';
 
 let cachedAuth: Auth | null = null;
 function getAppAuth(app: any): Auth {
@@ -415,8 +416,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Sign out warning:', e);
       }
       await AsyncStorage.multiRemove([AUTH_STORAGE_KEY, EVENTS_CACHE_LATEST]).catch(() => {});
-      // Cancel scheduled notifications only upon explicit user logout
+      // Cancel scheduled notifications & critical alarms only upon explicit user logout
       await syncAllEventNotifications([], { allowPurgeAll: true }).catch(() => {});
+      await cancelAllCriticalAlarms().catch(() => {});
       setUser(null);
       userRef.current = null;
       setFirebaseUser(null);

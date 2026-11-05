@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,10 +17,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../../src/components/Header';
 import { TypeBadge } from '../../../src/components/TypeBadge';
 import { ConfidenceBadge } from '../../../src/components/ConfidenceBadge';
+import { useAuth } from '../../../src/context/AuthContext';
 import { useEvents } from '../../../src/context/EventsContext';
 import { colors, radii, shadows } from '../../../src/theme/tokens';
 import { DatePickerModal } from '../../../src/components/ui/DatePickerModal';
 import { TimePickerModal } from '../../../src/components/ui/TimePickerModal';
+import {
+  canScheduleExactAlarms,
+  isIgnoringBatteryOptimizations,
+  openBatteryOptimizationSettings,
+  openExactAlarmSettings,
+  openAlarmChannelSettings,
+  getAlarmVolumeInfo,
+  computeAlarmSchedule,
+  AlarmVolumeInfo,
+} from '../../../src/services/alarmService';
+import { AlarmReliabilityModal } from '../../../src/components/AlarmReliabilityModal';
 import {
   CalendarEvent,
   EventType,
@@ -35,6 +47,8 @@ import {
   THEME_DESIGN,
   isValidTimeFormat,
   sanitizeUrl,
+  getEventById,
+  getCommunityEventById,
 } from '@eventpulse/shared';
 
 const EVENT_TYPES: EventType[] = ['hackathon', 'ctf', 'meetup', 'workshop', 'deadline', 'other'];
@@ -45,12 +59,41 @@ export default function EventDetailScreen() {
   const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
   const id = Array.isArray(rawId) ? rawId[0] : (rawId || '');
   const router = useRouter();
-  const { events, editEvent, removeEvent } = useEvents();
+  const { user } = useAuth();
+  const { events, editEvent, addEvent, removeEvent, toggleEventAlarm, isLoading: isEventsLoading } = useEvents();
 
-  const currentEvent = events.find((e) => e.id === id);
+  const currentEvent = useMemo(() => events.find((e) => e.id === id), [events, id]);
+  const [directEvent, setDirectEvent] = useState<CalendarEvent | null>(null);
+  const [isFetchingDirect, setIsFetchingDirect] = useState(false);
+  const [directFetchAttempted, setDirectFetchAttempted] = useState(false);
+
+  const activeEvent = currentEvent || directEvent;
 
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [hasExactAlarmPerm, setHasExactAlarmPerm] = useState(true);
+  const [isBatteryIgnored, setIsBatteryIgnored] = useState<boolean | null>(null);
+  const [alarmVolume, setAlarmVolume] = useState<AlarmVolumeInfo | null>(null);
+  const [showReliabilityModal, setShowReliabilityModal] = useState(false);
+
+  // Check alarm permissions, battery optimizations & volume whenever screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      canScheduleExactAlarms().then((can) => {
+        if (isMounted) setHasExactAlarmPerm(can);
+      });
+      isIgnoringBatteryOptimizations().then((ignoring) => {
+        if (isMounted) setIsBatteryIgnored(ignoring);
+      });
+      getAlarmVolumeInfo().then((vol) => {
+        if (isMounted) setAlarmVolume(vol);
+      });
+      return () => {
+        isMounted = false;
+      };
+    }, [])
+  );
   const [activeDatePicker, setActiveDatePicker] = useState<{
     field: 'registration_deadline' | 'event_start_date' | 'event_end_date';
     title: string;
@@ -86,7 +129,9 @@ export default function EventDetailScreen() {
   useEffect(() => {
     if (id && id !== lastRenderedIdRef.current) {
       lastRenderedIdRef.current = id;
-      // Reset edit mode and pickers for the new event
+      setDirectEvent(null);
+      setIsFetchingDirect(false);
+      setDirectFetchAttempted(false);
       setIsEditing(false);
       setIsSaving(false);
       setActiveDatePicker(null);
@@ -95,17 +140,84 @@ export default function EventDetailScreen() {
     }
   }, [id]);
 
-  // Sync form data whenever the Firestore snapshot updates (only when not actively editing)
+  // Fallback direct fetch: If not in local events cache, query Firestore directly
   useEffect(() => {
-    if (currentEvent && !isEditing) {
-      setFormData({ ...currentEvent });
+    if (currentEvent) return;
+    if (!id || directFetchAttempted) return;
+    if (isEventsLoading) return;
+
+    let isMounted = true;
+    setIsFetchingDirect(true);
+
+    const tryFetch = async () => {
+      try {
+        // 1. Try personal user events
+        if (user?.uid) {
+          const userEvt = await getEventById(user.uid, id);
+          if (userEvt && isMounted) {
+            setDirectEvent(userEvt);
+            setIsFetchingDirect(false);
+            setDirectFetchAttempted(true);
+            return;
+          }
+        }
+
+        // 2. Try community events
+        const commEvt = await getCommunityEventById(id);
+        if (commEvt && isMounted) {
+          const mapped: CalendarEvent = {
+            id: commEvt.id,
+            title: commEvt.title || 'Community Event',
+            type: commEvt.type || 'other',
+            event_start_date: commEvt.event_start_date || null,
+            event_end_date: commEvt.event_end_date || null,
+            registration_deadline: commEvt.registration_deadline || null,
+            time: commEvt.time || null,
+            mode: commEvt.mode || 'offline',
+            location: commEvt.location || null,
+            registration_link: commEvt.registration_link || null,
+            source_group: commEvt.source_group || commEvt.college || null,
+            raw_text: commEvt.description || '',
+            confidence_score: 1.0,
+            tags: commEvt.tags || [],
+            reminder_offsets: [4320, 1440, 0],
+            status: 'upcoming',
+            created_at: commEvt.created_at || new Date().toISOString(),
+            updated_at: commEvt.updated_at || new Date().toISOString(),
+          };
+          setDirectEvent(mapped);
+          setIsFetchingDirect(false);
+          setDirectFetchAttempted(true);
+          return;
+        }
+      } catch (err) {
+        console.warn('Error fetching event directly:', err);
+      } finally {
+        if (isMounted) {
+          setIsFetchingDirect(false);
+          setDirectFetchAttempted(true);
+        }
+      }
+    };
+
+    tryFetch();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, currentEvent, isEventsLoading, directFetchAttempted, user?.uid]);
+
+  // Sync form data whenever the active event snapshot updates (only when not actively editing)
+  useEffect(() => {
+    if (activeEvent && !isEditing) {
+      setFormData({ ...activeEvent });
     }
-  }, [currentEvent, isEditing]);
+  }, [activeEvent, isEditing]);
 
   const isEditingRef = useRef(isEditing);
   isEditingRef.current = isEditing;
-  const currentEventRef = useRef(currentEvent);
-  currentEventRef.current = currentEvent;
+  const activeEventRef = useRef(activeEvent);
+  activeEventRef.current = activeEvent;
 
   // Intercept Android hardware back button to show discard dialog when editing
   useFocusEffect(
@@ -122,7 +234,7 @@ export default function EventDetailScreen() {
                 style: 'destructive',
                 onPress: () => {
                   setIsEditing(false);
-                  if (currentEventRef.current) setFormData({ ...currentEventRef.current });
+                  if (activeEventRef.current) setFormData({ ...activeEventRef.current });
                   router.back();
                 },
               },
@@ -163,7 +275,7 @@ export default function EventDetailScreen() {
             style: 'destructive',
             onPress: () => {
               setIsEditing(false);
-              if (currentEvent) setFormData({ ...currentEvent });
+              if (activeEvent) setFormData({ ...activeEvent });
               router.back();
             },
           },
@@ -172,9 +284,24 @@ export default function EventDetailScreen() {
     } else {
       router.back();
     }
-  }, [isEditing, currentEvent, router]);
+  }, [isEditing, activeEvent, router]);
 
-  if (!currentEvent && !formData.title) {
+  // Loading state while hydrating cache or checking Firestore directly
+  if ((isEventsLoading || isFetchingDirect || (!activeEvent && !directFetchAttempted)) && !formData.title) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <Header title="Event Details" showBack />
+        <View style={[styles.emptyContainer, { justifyContent: 'center' }]}>
+          <ActivityIndicator size="large" color={colors.textPrimary} />
+          <Text style={[styles.emptyTitle, { fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginTop: 12 }]}>
+            Loading event details...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!activeEvent && !formData.title) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <Header title="Event Details" showBack />
@@ -204,7 +331,8 @@ export default function EventDetailScreen() {
     }
     setIsSaving(true);
     try {
-      await editEvent(formData.id, {
+      const existsLocally = events.some((e) => e.id === formData.id);
+      const payload: Partial<CalendarEvent> = {
         title: formData.title.trim(),
         type: formData.type,
         event_start_date: formData.event_start_date || null,
@@ -216,7 +344,17 @@ export default function EventDetailScreen() {
         registration_link: formData.registration_link ? sanitizeUrl(formData.registration_link) : null,
         source_group: formData.source_group ? formData.source_group.trim() : null,
         status: formData.status,
-      });
+        has_critical_alarm: Boolean(formData.has_critical_alarm),
+        alarm_offsets: formData.alarm_offsets || [120, 15],
+        alarm_time_assumed: !formData.time,
+      };
+
+      if (existsLocally) {
+        await editEvent(formData.id, payload);
+      } else {
+        await addEvent({ ...formData, ...payload });
+      }
+
       setIsEditing(false);
       Alert.alert('Success', 'Event updated successfully.');
     } catch (err: any) {
@@ -247,6 +385,7 @@ export default function EventDetailScreen() {
 
   const urgency = getUrgencyInfo(formData);
   const modeConfig = EVENT_MODE_CONFIG[formData.mode] || EVENT_MODE_CONFIG.online;
+  const alarmPreview = useMemo(() => computeAlarmSchedule(formData), [formData]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -319,6 +458,157 @@ export default function EventDetailScreen() {
               );
             })}
           </View>
+        </View>
+
+        {/* Critical Deadline Alarm Section */}
+        <View style={styles.alarmSectionCard}>
+          <View style={styles.alarmHeaderRow}>
+            <View style={styles.alarmTitleGroup}>
+              <View style={[styles.alarmIconBadge, formData.has_critical_alarm ? styles.alarmIconBadgeActive : styles.alarmIconBadgeInactive]}>
+                <Ionicons
+                  name={formData.has_critical_alarm ? "alarm" : "alarm-outline"}
+                  size={18}
+                  color={formData.has_critical_alarm ? "#FFFFFF" : colors.textTertiary}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.alarmSectionHeading}>CRITICAL DEADLINE ALARM</Text>
+                <Text style={styles.alarmSectionSub}>
+                  {formData.has_critical_alarm
+                    ? "Insistent repeating alarm armed"
+                    : "Ring a loud repeating alarm so you never miss this cutoff"}
+                </Text>
+              </View>
+            </View>
+
+            {/* 1-Tap Toggle Switch */}
+            <TouchableOpacity
+              style={[styles.alarmToggleSwitch, formData.has_critical_alarm ? styles.alarmToggleSwitchOn : styles.alarmToggleSwitchOff]}
+              onPress={async () => {
+                const nextVal = !formData.has_critical_alarm;
+                handleFieldChange('has_critical_alarm', nextVal);
+                if (!isEditing && activeEvent) {
+                  await toggleEventAlarm(activeEvent.id, nextVal);
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.alarmToggleThumb, formData.has_critical_alarm && styles.alarmToggleThumbOn]} />
+            </TouchableOpacity>
+          </View>
+
+          {formData.has_critical_alarm && (
+            <View style={styles.alarmDetailsWrap}>
+              {/* Trigger timing info */}
+              {alarmPreview?.triggers && alarmPreview.triggers.length > 0 ? (
+                <View style={styles.alarmTimelineRow}>
+                  {alarmPreview.triggers.map((t: { stage: number; offsetMinutes: number; triggerTimeMs: number }, idx: number) => (
+                    <View key={idx} style={styles.alarmPill}>
+                      <Ionicons name="time-outline" size={12} color="#D97706" />
+                      <Text style={styles.alarmPillText}>
+                        Stage {t.stage}: {new Date(t.triggerTimeMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({t.offsetMinutes}m before)
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.alarmWarningText}>
+                  ⚠️ Event dates are in the past. Alarms will not ring.
+                </Text>
+              )}
+
+              {alarmPreview?.isTimeAssumed && (
+                <Text style={styles.alarmAssumptionText}>
+                  ℹ️ End of day (11:59 PM) assumed. Tap Edit if the actual deadline is earlier.
+                </Text>
+              )}
+
+              {/* Warnings */}
+              {!hasExactAlarmPerm && (
+                <TouchableOpacity
+                  style={styles.alarmPermissionAlert}
+                  onPress={openExactAlarmSettings}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="alert-circle" size={14} color="#EF4444" />
+                  <Text style={styles.alarmPermissionAlertText}>
+                    Exact alarms restricted by system. Tap to allow in Settings.
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {alarmVolume?.isMuted && (
+                <View style={styles.alarmVolumeAlert}>
+                  <Ionicons name="volume-mute" size={14} color="#F59E0B" />
+                  <Text style={styles.alarmVolumeAlertText}>
+                    Your phone's Alarm Volume is muted. Increase volume slider to hear alarms.
+                  </Text>
+                </View>
+              )}
+
+              {isBatteryIgnored === false && (
+                <TouchableOpacity
+                  style={styles.alarmBatteryAlert}
+                  onPress={() => setShowReliabilityModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="battery-charging-outline" size={14} color="#F59E0B" />
+                  <Text style={styles.alarmBatteryAlertText}>
+                    Battery Saver may silence background alarms. Tap for device guide.
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Action: Mark as Submitted */}
+              {formData.status !== 'registered' && !isEditing && (
+                <TouchableOpacity
+                  style={styles.markSubmittedBtn}
+                  onPress={async () => {
+                    handleFieldChange('status', 'registered');
+                    handleFieldChange('has_critical_alarm', false);
+                    await editEvent(formData.id, {
+                      status: 'registered',
+                      has_critical_alarm: false,
+                    });
+                    Alert.alert('Marked as Submitted', 'Alarms disarmed and event marked as registered.');
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="checkmark-done-circle" size={18} color="#10B981" />
+                  <Text style={styles.markSubmittedBtnText}>Mark as Submitted (Disarms Alarm)</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Edit Mode Custom Offsets */}
+          {isEditing && formData.has_critical_alarm && (
+            <View style={styles.editOffsetSection}>
+              <Text style={styles.editOffsetLabel}>ALARM ESCALATION STAGES:</Text>
+              <View style={styles.offsetChipsRow}>
+                {[
+                  { label: '2h & 15m (Default)', offsets: [120, 15] },
+                  { label: '1h & 15m', offsets: [60, 15] },
+                  { label: 'At Deadline Only', offsets: [0] },
+                ].map((preset, idx) => {
+                  const currentOffsets = formData.alarm_offsets || [120, 15];
+                  const isSelected = JSON.stringify(currentOffsets) === JSON.stringify(preset.offsets);
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[styles.offsetChip, isSelected && styles.offsetChipActive]}
+                      onPress={() => handleFieldChange('alarm_offsets', preset.offsets)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.offsetChipText, isSelected && styles.offsetChipTextActive]}>
+                        {preset.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
         </View>
 
         {isEditing ? (
@@ -642,6 +932,12 @@ export default function EventDetailScreen() {
         initialTime={formData.time}
         onSelect={(timeStr) => handleFieldChange('time', timeStr)}
         onClose={() => setShowTimePicker(false)}
+      />
+
+      {/* Alarm Reliability & OEM Battery Modal */}
+      <AlarmReliabilityModal
+        visible={showReliabilityModal}
+        onClose={() => setShowReliabilityModal(false)}
       />
     </SafeAreaView>
   );
@@ -989,5 +1285,214 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  alarmSectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 12,
+    ...THEME_DESIGN.shadows.card,
+  },
+  alarmHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  alarmTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  alarmIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alarmIconBadgeActive: {
+    backgroundColor: '#D97706',
+  },
+  alarmIconBadgeInactive: {
+    backgroundColor: '#F1F5F9',
+  },
+  alarmSectionHeading: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    color: '#0F172A',
+  },
+  alarmSectionSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  alarmToggleSwitch: {
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  alarmToggleSwitchOn: {
+    backgroundColor: '#D97706',
+  },
+  alarmToggleSwitchOff: {
+    backgroundColor: '#CBD5E1',
+  },
+  alarmToggleThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+  },
+  alarmToggleThumbOn: {
+    alignSelf: 'flex-end',
+  },
+  alarmDetailsWrap: {
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+    gap: 10,
+  },
+  alarmTimelineRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  alarmPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  alarmPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  alarmWarningText: {
+    fontSize: 11,
+    color: '#DC2626',
+    fontWeight: '600',
+  },
+  alarmAssumptionText: {
+    fontSize: 11,
+    color: '#64748B',
+    lineHeight: 16,
+  },
+  alarmPermissionAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF2F2',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  alarmPermissionAlertText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+    flex: 1,
+  },
+  alarmVolumeAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFBEB',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  alarmVolumeAlertText: {
+    fontSize: 11,
+    color: '#B45309',
+    fontWeight: '600',
+    flex: 1,
+  },
+  alarmBatteryAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFBEB',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    marginTop: 6,
+  },
+  alarmBatteryAlertText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#B45309',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  markSubmittedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginTop: 4,
+  },
+  markSubmittedBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  editOffsetSection: {
+    marginTop: 6,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+    gap: 6,
+  },
+  editOffsetLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  offsetChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  offsetChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  offsetChipActive: {
+    backgroundColor: '#D97706',
+    borderColor: '#B45309',
+  },
+  offsetChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  offsetChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
 });

@@ -30,7 +30,7 @@ export function reportErrorTelemetry(payload: TelemetryPayload): void {
         isFatal: !!payload.isFatal,
         context: payload.context || 'global',
         platform: Platform.OS,
-        version: Constants.expoConfig?.version ?? '1.0.2',
+        version: Constants.expoConfig?.version ?? '1.0.3',
         timestamp: new Date().toISOString(),
       }),
     }).catch(() => {});

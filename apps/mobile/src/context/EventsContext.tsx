@@ -19,6 +19,7 @@ import {
 } from '@eventpulse/shared';
 import { useAuth } from './AuthContext';
 import { syncAllEventNotifications, cancelEventNotifications, remapNotificationIds } from '../services/notificationService';
+import { syncAllCriticalAlarms, drainPendingAlarmActions, cancelEventCriticalAlarm } from '../services/alarmService';
 import { isOnline, subscribeToNetworkStatus } from '../services/networkService';
 
 function normalizeEventData(e: CalendarEvent): CalendarEvent {
@@ -71,6 +72,7 @@ interface EventsContextType {
   upcomingEvents: CalendarEvent[];
   clashes: ClashDetail[];
   pendingWritesCount: number;
+  toggleEventAlarm: (id: string, hasAlarm: boolean, offsets?: number[]) => Promise<void>;
 }
 
 const EventsContext = createContext<EventsContextType | undefined>(undefined);
@@ -128,7 +130,34 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (events.length === 0) return;
 
     syncAllEventNotifications(events).catch(() => {});
+    syncAllCriticalAlarms(events).catch(() => {});
   }, [events, authLoading, user]);
+
+  // Drain any pending actions triggered from Native Alarm notification buttons (e.g. "Mark as Submitted")
+  const checkPendingAlarmActions = useCallback(async () => {
+    if (!isHydratedRef.current || authLoading || !user) return;
+    try {
+      const pending = await drainPendingAlarmActions();
+      for (const item of pending) {
+        if (item.action === 'mark_submitted' && item.eventId) {
+          console.log(`[EventsContext] Reconciling native Mark as Submitted action for event ${item.eventId}`);
+          editEvent(item.eventId, { status: 'registered' }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to drain pending alarm actions:', err);
+    }
+  }, [authLoading, user]);
+
+  useEffect(() => {
+    checkPendingAlarmActions();
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        checkPendingAlarmActions();
+      }
+    });
+    return () => sub.remove();
+  }, [checkPendingAlarmActions]);
 
   const saveToStorage = useCallback(async (updatedList: CalendarEvent[]) => {
     try {
@@ -613,8 +642,9 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const removeEvent = async (id: string): Promise<void> => {
     if (!user) throw new Error('User not logged in');
 
-    // Cancel this event's scheduled OS notifications immediately
+    // Cancel this event's scheduled OS notifications & critical alarms immediately
     cancelEventNotifications(id).catch(() => {});
+    cancelEventCriticalAlarm(id).catch(() => {});
 
     const updated = events.filter((e) => e.id !== id);
     setEvents(updated);
@@ -666,6 +696,19 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return detectClashes(events);
   }, [events, lastRefreshTick]);
 
+  const toggleEventAlarm = async (id: string, hasAlarm: boolean, offsets?: number[]) => {
+    const existing = events.find((e) => e.id === id);
+    if (!existing) return;
+
+    const updates: Partial<CalendarEvent> = {
+      has_critical_alarm: hasAlarm,
+    };
+    if (offsets && offsets.length > 0) {
+      updates.alarm_offsets = offsets;
+    }
+    await editEvent(id, updates);
+  };
+
   return (
     <EventsContext.Provider
       value={{
@@ -683,6 +726,7 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         upcomingEvents,
         clashes,
         pendingWritesCount: pendingWrites.length,
+        toggleEventAlarm,
       }}
     >
       {children}

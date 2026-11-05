@@ -700,7 +700,7 @@ export async function reconcileOrphanedDeletions(env: Env): Promise<{
             summary.completed++;
           } else {
             summary.failed++;
-            console.warn(`[Deletion Reconciliation] Failed to complete resumed deletion for UID: ${uid}:`, result.error);
+            console.warn('[Deletion Reconciliation] Failed to complete resumed deletion for UID:', uid, result.error);
           }
         }
       }
@@ -885,6 +885,91 @@ export function renderPrivacyPolicyHtml(): string {
         <strong>Data Protection & Grievance Desk:</strong> Vanko Privacy Office<br>
         <strong>Email:</strong> <a href="mailto:supportvanko@gmail.com">supportvanko@gmail.com</a><br>
         <strong>In-App Channel:</strong> Vanko App &gt; Settings &gt; Send Feedback / Suggestion
+      </div>
+    </section>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Public HTML Terms of Service responsive web page.
+ */
+export function renderTermsOfServiceHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service - Vanko</title>
+  <style>
+    :root {
+      --bg: #0B0E14;
+      --card-bg: rgba(22, 27, 34, 0.8);
+      --border: rgba(255, 255, 255, 0.1);
+      --primary: #6366F1;
+      --text: #F3F4F6;
+      --text-muted: #9CA3AF;
+      --accent: #10B981;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      margin: 0;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      backdrop-filter: blur(12px);
+    }
+    h1 { font-size: 28px; margin-top: 0; color: #FFFFFF; font-weight: 700; }
+    h2 { font-size: 18px; color: #FFFFFF; margin-top: 28px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    p, li { color: var(--text-muted); font-size: 14px; line-height: 1.7; }
+    ul { padding-left: 20px; }
+    .badge { display: inline-block; background: rgba(99, 102, 241, 0.15); color: var(--primary); padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+    .contact-box { background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 16px; font-size: 13px; color: var(--text); }
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="badge">LEGAL TERMS</div>
+    <h1>Vanko Terms of Service</h1>
+    <p>Last updated: October 2026</p>
+
+    <section>
+      <h2>1. Acceptance of Terms</h2>
+      <p>By creating an account, downloading the Vanko mobile application, or connecting via our API/MCP services, you agree to these Terms of Service. If you do not agree, do not use the application.</p>
+    </section>
+
+    <section>
+      <h2>2. Permitted Use & Academic Services</h2>
+      <p>Vanko is designed for students, faculty, and academic communities to manage events, assignments, hackathons, and alarms. You agree not to abuse the service, reverse-engineer proprietary algorithms, or overload backend APIs.</p>
+    </section>
+
+    <section>
+      <h2>3. AI Processing & Third-Party Connectors</h2>
+      <p>AI calendar extraction and natural language processing are provided to facilitate scheduling. You retain full ownership of all calendar content and notices submitted. When connecting ChatGPT or external AI tools via OAuth 2.1 or MCP, access is strictly governed by your authorization credentials.</p>
+    </section>
+
+    <section>
+      <h2>4. Account Termination & Deletion</h2>
+      <p>You may delete your account and erase all associated personal data at any time via the Vanko mobile app settings or our public <a href="/delete-account">Web Deletion Portal</a>.</p>
+    </section>
+
+    <section>
+      <h2>5. Contact Information</h2>
+      <div class="contact-box">
+        <strong>Vanko Support & Legal:</strong> supportvanko@gmail.com<br>
+        <strong>Web Portal:</strong> <a href="https://vanko-api.vanko-app.workers.dev">https://vanko-api.vanko-app.workers.dev</a>
       </div>
     </section>
   </div>

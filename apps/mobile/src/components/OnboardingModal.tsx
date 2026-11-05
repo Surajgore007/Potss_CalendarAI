@@ -45,7 +45,7 @@ const SLIDES: Slide[] = [
     steps: [
       { icon: 'share-social-outline', text: 'Long press any WhatsApp message with event info' },
       { icon: 'open-outline', text: 'Tap Share → select Vanko from the share sheet' },
-      { icon: 'checkmark-circle-outline', text: 'AI extracts all event details instantly — review and save' },
+      { icon: 'checkmark-circle-outline', text: 'Vanko extracts all event details instantly — review and save' },
     ],
   },
   {

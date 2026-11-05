@@ -227,7 +227,16 @@ export async function getEventById(uid: string, eventId: string): Promise<Calend
   const eventDoc = doc(db, 'users', uid, 'events', eventId);
   const snap = await getDoc(eventDoc);
   if (!snap.exists()) return null;
-  return snap.data() as CalendarEvent;
+  return { id: snap.id, ...snap.data() } as CalendarEvent;
+}
+
+/** Get single community event */
+export async function getCommunityEventById(eventId: string): Promise<CommunityEvent | null> {
+  const db = getDb();
+  const eventDoc = doc(db, 'communityEvents', eventId);
+  const snap = await getDoc(eventDoc);
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as CommunityEvent;
 }
 
 /** Subscribe to real-time updates for a user's events */

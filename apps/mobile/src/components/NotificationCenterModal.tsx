@@ -612,12 +612,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     }
 
     if (alert.eventId) {
-      const isPersonal = events.some((e) => e.id === alert.eventId);
-      if (isPersonal) {
-        router.push(`/event/${alert.eventId}`);
-      } else {
-        router.push('/(auth)/college' as any);
-      }
+      router.push(`/event/${alert.eventId}`);
     } else {
       router.push('/(auth)/college' as any);
     }

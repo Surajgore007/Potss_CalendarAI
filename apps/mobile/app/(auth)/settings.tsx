@@ -8,6 +8,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,21 +30,80 @@ import { MyDataModal } from '../../src/components/MyDataModal';
 import { CampusAffiliationModal } from '../../src/components/CampusAffiliationModal';
 import { colors, radii, shadows } from '../../src/theme/tokens';
 import { COLLEGE_SIES_GST, COLLEGE_OTHER } from '@eventpulse/shared';
+import { AlarmReliabilityModal } from '../../src/components/AlarmReliabilityModal';
+import { McpTokenModal } from '../../src/components/McpTokenModal';
+import {
+  isIgnoringBatteryOptimizations,
+  canScheduleExactAlarms,
+  openBatteryOptimizationSettings,
+  openAlarmChannelSettings,
+} from '../../src/services/alarmService';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, signOutUser, isAdmin, refreshPermissions } = useAuth();
+  const { user, signOutUser, isAdmin, refreshPermissions, getIdToken } = useAuth();
   const { events } = useEvents();
   const [liveUserCount, setLiveUserCount] = useState<number | null>(null);
   const [isRefreshingRole, setIsRefreshingRole] = useState(false);
 
-  // DPDP & Feedback Modal States
+  // DPDP, MCP & Feedback Modal States
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showAdminFeedbackModal, setShowAdminFeedbackModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showConsentsModal, setShowConsentsModal] = useState(false);
   const [showMyDataModal, setShowMyDataModal] = useState(false);
   const [showCollegeModal, setShowCollegeModal] = useState(false);
+  const [showReliabilityModal, setShowReliabilityModal] = useState(false);
+  const [showMcpModal, setShowMcpModal] = useState(false);
+  const [mcpToken, setMcpToken] = useState<string | null>(null);
+  const [isFetchingToken, setIsFetchingToken] = useState(false);
+  const [isBatteryIgnored, setIsBatteryIgnored] = useState<boolean | null>(null);
+  const [hasExactAlarms, setHasExactAlarms] = useState<boolean | null>(null);
+
+  const handleOpenMcpModal = async () => {
+    setIsFetchingToken(true);
+    try {
+      const token = await getIdToken(true);
+      if (!token) {
+        Alert.alert('Authentication Required', 'Please sign in to generate your AI assistant connection URL.');
+        return;
+      }
+
+      // Request permanent non-expiring personal key from Cloudflare Worker
+      let keyToDisplay = token;
+      try {
+        const resp = await fetch('https://vanko-api.vanko-app.workers.dev/api/mcp/permanent-key', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        if (resp.ok) {
+          const data = (await resp.json()) as any;
+          if (data && data.key) {
+            keyToDisplay = data.key;
+          }
+        }
+      } catch (err) {
+        console.warn('[MCP] Permanent key generation network fallback:', err);
+      }
+
+      setMcpToken(keyToDisplay);
+      setShowMcpModal(true);
+    } catch {
+      Alert.alert('Error', 'Failed to retrieve access token. Check network.');
+    } finally {
+      setIsFetchingToken(false);
+    }
+  };
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      isIgnoringBatteryOptimizations().then(setIsBatteryIgnored).catch(() => {});
+      canScheduleExactAlarms().then(setHasExactAlarms).catch(() => {});
+    }
+  }, []);
 
   // Subscribe to real-time live platform user count
   useEffect(() => {
@@ -109,7 +169,7 @@ export default function SettingsScreen() {
                   <Ionicons
                     name={isAdmin ? 'shield-checkmark' : 'school-outline'}
                     size={11}
-                    color={isAdmin ? colors.danger : colors.primary}
+                    color={isAdmin ? colors.danger : colors.textSecondary}
                   />
                   <Text style={isAdmin ? styles.adminBadgeText : styles.roleBadgeText} numberOfLines={1}>
                     {isAdmin ? 'Admin' : 'Student'}
@@ -128,227 +188,340 @@ export default function SettingsScreen() {
                     ) : (
                       <Ionicons name="sync-outline" size={12} color={colors.textSecondary} />
                     )}
-                    <Text style={styles.refreshBadgeText}>Sync Permissions</Text>
+                    <Text style={styles.refreshBadgeText} numberOfLines={1}>Sync Permissions</Text>
                   </TouchableOpacity>
                 )}
               </View>
             </View>
           </GlassCard>
 
-          {/* Campus Affiliation */}
-          <GlassCard contentStyle={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionHeader} numberOfLines={1}>Campus Affiliation</Text>
-              <View
-                style={[
-                  styles.campusPill,
-                  user?.college === COLLEGE_OTHER ? styles.campusPillOther : styles.campusPillSies,
-                ]}
-              >
-                <Ionicons
-                  name={user?.college === COLLEGE_OTHER ? 'globe-outline' : 'shield-checkmark'}
-                  size={10}
-                  color={user?.college === COLLEGE_OTHER ? colors.textSecondary : colors.primary}
-                />
-                <Text
-                  style={[
-                    styles.campusPillText,
-                    user?.college === COLLEGE_OTHER ? styles.campusPillTextOther : styles.campusPillTextSies,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {user?.college === COLLEGE_OTHER ? 'General Student' : 'SIES GST Member'}
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.touchableRow}
-              onPress={() => setShowCollegeModal(true)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.rowIconCircle, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
-                <Ionicons name="school-outline" size={16} color={colors.primary} />
-              </View>
-              <View style={styles.rowTextCol}>
-                <Text style={styles.rowTitle} numberOfLines={1}>
-                  {user?.college === COLLEGE_OTHER
-                    ? 'Other College / General Student'
-                    : 'SIES Graduate School of Technology'}
-                </Text>
-                <Text style={styles.rowSub} numberOfLines={2}>
-                  {user?.college === COLLEGE_OTHER
-                    ? 'Tap to change your affiliation or join SIES GST broadcasts.'
-                    : 'Receiving all official SIES GST campus notifications & broadcasts.'}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-            </TouchableOpacity>
-          </GlassCard>
-
-          {/* Live Platform & Community Network */}
-          <GlassCard contentStyle={styles.sectionCard}>
-            <Text style={styles.sectionHeader} numberOfLines={1}>Platform Network</Text>
-
-            <View style={styles.rowItem}>
-              <View style={[styles.rowIconCircle, { backgroundColor: colors.successLight }]}>
-                <Ionicons name="people-outline" size={16} color={colors.success} />
-              </View>
-              <View style={styles.rowTextCol}>
-                <View style={styles.liveBadgeRow}>
-                  <Text style={styles.rowTitle} numberOfLines={1}>Total Registered Users</Text>
-                  <View style={styles.livePill}>
-                    <View style={styles.livePulseDot} />
-                    <Text style={styles.livePillText}>LIVE</Text>
-                  </View>
-                </View>
-                <Text style={styles.rowSub} numberOfLines={2}>
-                  {liveUserCount !== null
-                    ? `${liveUserCount.toLocaleString()} registered user${liveUserCount === 1 ? '' : 's'} on the platform.`
-                    : 'Connecting to live platform counter...'}
-                </Text>
-              </View>
-            </View>
-          </GlassCard>
-
-          {/* Help & Feedback Channel (Admin-Only) */}
-          <GlassCard contentStyle={styles.sectionCard}>
-            <Text style={styles.sectionHeader} numberOfLines={1}>Help & Feedback</Text>
-
-            <TouchableOpacity
-              style={styles.touchableRow}
-              onPress={() => setShowFeedbackModal(true)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.rowIconCircle, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
-                <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
-              </View>
-              <View style={styles.rowTextCol}>
-                <Text style={styles.rowTitle} numberOfLines={1}>Send Feedback / Suggestion</Text>
-                <Text style={styles.rowSub} numberOfLines={2}>
-                  Report bugs or suggest features directly to the Vanko team.
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-            </TouchableOpacity>
-
-            {isAdmin && (
+          {/* SECTION 1: ACCOUNT & PREFERENCES */}
+          <View style={styles.sectionGroup}>
+            <Text style={styles.sectionGroupTitle}>Account & Preferences</Text>
+            <GlassCard contentStyle={styles.groupedCardContent}>
+              {/* Row 1: Campus Affiliation */}
               <TouchableOpacity
-                style={[styles.touchableRow, { marginTop: 4 }]}
-                onPress={() => setShowAdminFeedbackModal(true)}
+                style={styles.menuRow}
+                onPress={() => setShowCollegeModal(true)}
                 activeOpacity={0.7}
               >
-                <View style={[styles.rowIconCircle, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
-                  <Ionicons name="shield-checkmark-outline" size={16} color={colors.danger} />
+                <View style={styles.rowIconCircle}>
+                  <Ionicons name="school-outline" size={17} color={colors.textPrimary} />
                 </View>
                 <View style={styles.rowTextCol}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={styles.rowTitle} numberOfLines={1}>Admin: Review Feedback</Text>
-                    <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
-                      <Text style={{ fontSize: 9, fontWeight: '700', color: colors.danger }}>ADMIN</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.rowSub} numberOfLines={2}>
-                    Read user bug reports, suggestions, and send private replies.
+                  <Text style={styles.rowTitle} numberOfLines={1}>Campus Affiliation</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>
+                    {user?.college === COLLEGE_OTHER ? 'General Student' : 'SIES GST Member'}
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
               </TouchableOpacity>
-            )}
-          </GlassCard>
 
-          {/* Personal Data & Rights (DPDP Act 2023) */}
-          <GlassCard contentStyle={styles.sectionCard}>
-            <Text style={styles.sectionHeader} numberOfLines={1}>Personal Data & Privacy Rights (DPDP)</Text>
+              <View style={styles.rowDivider} />
 
-            <TouchableOpacity
-              style={styles.touchableRow}
-              onPress={() => setShowMyDataModal(true)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowIconCircle}>
-                <Ionicons name="folder-open-outline" size={16} color={colors.textPrimary} />
+              {/* Row 2: My Data & Export */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                onPress={() => setShowMyDataModal(true)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.rowIconCircle}>
+                  <Ionicons name="folder-open-outline" size={17} color={colors.textPrimary} />
+                </View>
+                <View style={styles.rowTextCol}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>My Data & Export</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>View profile, personal events & export</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+              </TouchableOpacity>
+
+              <View style={styles.rowDivider} />
+
+              {/* Row 3: Manage Consents */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                onPress={() => setShowConsentsModal(true)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.rowIconCircle}>
+                  <Ionicons name="shield-checkmark-outline" size={17} color={colors.textPrimary} />
+                </View>
+                <View style={styles.rowTextCol}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>Privacy & Consents</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>Push reminders & data processing choices</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </GlassCard>
+          </View>
+
+          {/* SECTION 2: INTEGRATIONS & RELIABILITY */}
+          <View style={styles.sectionGroup}>
+            <Text style={styles.sectionGroupTitle}>Integrations & Reliability</Text>
+            <GlassCard contentStyle={styles.groupedCardContent}>
+              {/* Row 1: AI Assistant (MCP) */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                onPress={handleOpenMcpModal}
+                disabled={isFetchingToken}
+                activeOpacity={0.7}
+              >
+                <View style={styles.rowIconCircle}>
+                  {isFetchingToken ? (
+                    <ActivityIndicator size="small" color={colors.textPrimary} />
+                  ) : (
+                    <Ionicons name="sparkles-outline" size={17} color={colors.textPrimary} />
+                  )}
+                </View>
+                <View style={styles.rowTextCol}>
+                  <View style={styles.rowTitleBadgeWrap}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>Connect AI Assistants</Text>
+                    <View style={styles.mcpPill}>
+                      <Text style={styles.mcpPillText}>MCP</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.rowSub} numberOfLines={1}>ChatGPT (OAuth), Claude Desktop & Cursor</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+              </TouchableOpacity>
+
+              {Platform.OS === 'android' && (
+                <>
+                  <View style={styles.rowDivider} />
+
+                  {/* Row 2: Alarm Reliability Guide */}
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    onPress={() => setShowReliabilityModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.rowIconCircle}>
+                      <Ionicons name="shield-checkmark-outline" size={17} color={colors.textPrimary} />
+                    </View>
+                    <View style={styles.rowTextCol}>
+                      <View style={styles.rowTitleBadgeWrap}>
+                        <Text style={styles.rowTitle} numberOfLines={1}>Alarm Reliability Guide</Text>
+                        <View
+                          style={[
+                            styles.statusPill,
+                            isBatteryIgnored ? styles.statusPillOptimal : styles.statusPillWarning,
+                          ]}
+                        >
+                          <Ionicons
+                            name={isBatteryIgnored ? 'checkmark-circle' : 'alert-circle'}
+                            size={10}
+                            color={isBatteryIgnored ? '#16A34A' : '#D97706'}
+                          />
+                          <Text
+                            style={[
+                              styles.statusPillText,
+                              isBatteryIgnored ? styles.statusPillTextOptimal : styles.statusPillTextWarning,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {isBatteryIgnored ? 'Optimal' : 'Needs Setup'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.rowSub} numberOfLines={1}>Xiaomi, Samsung, Oppo background limits</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+                  </TouchableOpacity>
+
+                  <View style={styles.rowDivider} />
+
+                  {/* Row 3: Battery Saver Settings */}
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    onPress={openBatteryOptimizationSettings}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.rowIconCircle}>
+                      <Ionicons name="battery-charging-outline" size={17} color={colors.textPrimary} />
+                    </View>
+                    <View style={styles.rowTextCol}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>Battery Saver Settings</Text>
+                      <Text style={styles.rowSub} numberOfLines={1}>
+                        {isBatteryIgnored
+                          ? 'Vanko is exempt from battery saver sleep limits'
+                          : 'Allow unrestricted background execution'}
+                      </Text>
+                    </View>
+                    <Ionicons name="open-outline" size={16} color={colors.textTertiary} />
+                  </TouchableOpacity>
+
+                  <View style={styles.rowDivider} />
+
+                  {/* Row 4: Alarm Audio Channel */}
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    onPress={openAlarmChannelSettings}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.rowIconCircle}>
+                      <Ionicons name="volume-high-outline" size={17} color={colors.textPrimary} />
+                    </View>
+                    <View style={styles.rowTextCol}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>Alarm Audio Channel</Text>
+                      <Text style={styles.rowSub} numberOfLines={1}>Ringtone, vibration & DND override settings</Text>
+                    </View>
+                    <Ionicons name="open-outline" size={16} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </>
+              )}
+            </GlassCard>
+          </View>
+
+          {/* SECTION 3: COMMUNITY & SUPPORT */}
+          <View style={styles.sectionGroup}>
+            <Text style={styles.sectionGroupTitle}>Community & Support</Text>
+            <GlassCard contentStyle={styles.groupedCardContent}>
+              {/* Row 1: Platform Network */}
+              <View style={styles.menuRow}>
+                <View style={styles.rowIconCircle}>
+                  <Ionicons name="people-outline" size={17} color={colors.textPrimary} />
+                </View>
+                <View style={styles.rowTextCol}>
+                  <View style={styles.rowTitleBadgeWrap}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>Platform Network</Text>
+                    <View style={styles.livePill}>
+                      <View style={styles.livePulseDot} />
+                      <Text style={styles.livePillText}>LIVE</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.rowSub} numberOfLines={1}>
+                    {liveUserCount !== null
+                      ? `${liveUserCount.toLocaleString()} registered student${liveUserCount === 1 ? '' : 's'} on Vanko`
+                      : 'Connecting to live platform counter...'}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.rowTextCol}>
-                <Text style={styles.rowTitle} numberOfLines={1}>My Data & Export</Text>
-                <Text style={styles.rowSub} numberOfLines={2}>
-                  View all personal data stored, edit profile, or export JSON/iCalendar.
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.touchableRow}
-              onPress={() => setShowConsentsModal(true)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowIconCircle}>
-                <Ionicons name="shield-checkmark-outline" size={16} color={colors.textPrimary} />
-              </View>
-              <View style={styles.rowTextCol}>
-                <Text style={styles.rowTitle} numberOfLines={1}>Manage Data Consents</Text>
-                <Text style={styles.rowSub} numberOfLines={2}>
-                  Review active processing purposes or withdraw consent.
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-            </TouchableOpacity>
+              <View style={styles.rowDivider} />
 
-            <TouchableOpacity
-              style={styles.touchableRow}
-              onPress={handleOpenPrivacyPolicy}
-              activeOpacity={0.7}
-            >
-              <View style={styles.rowIconCircle}>
-                <Ionicons name="document-text-outline" size={16} color={colors.textPrimary} />
-              </View>
-              <View style={styles.rowTextCol}>
-                <Text style={styles.rowTitle} numberOfLines={1}>Privacy Policy</Text>
-                <Text style={styles.rowSub} numberOfLines={2}>
-                  Read our DPDP Act 2023 & Google Play compliant privacy policy.
-                </Text>
-              </View>
-              <Ionicons name="open-outline" size={16} color={colors.textTertiary} />
-            </TouchableOpacity>
+              {/* Row 2: Help & Feedback */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                onPress={() => setShowFeedbackModal(true)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.rowIconCircle}>
+                  <Ionicons name="chatbubbles-outline" size={17} color={colors.textPrimary} />
+                </View>
+                <View style={styles.rowTextCol}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>Send Feedback / Suggestion</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>Report bugs or suggest features directly to the team</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+              </TouchableOpacity>
 
-            {/* Privacy & Governance Desk */}
-            <View style={styles.grievanceCard}>
-              <View style={styles.grievanceHeader}>
-                <Ionicons name="shield-checkmark-outline" size={16} color={colors.primary} />
-                <Text style={styles.grievanceTitle}>Privacy & Data Protection</Text>
-              </View>
-              <Text style={styles.grievanceText}>
-                Data Fiduciary: <Text style={styles.boldText}>Vanko</Text>{'\n'}
-                Support Desk: <Text style={styles.boldText}>Privacy & Data Protection</Text>{'\n'}
-                Contact: <Text style={styles.boldText}>supportvanko@gmail.com</Text>
-              </Text>
-            </View>
-          </GlassCard>
+              {isAdmin && (
+                <>
+                  <View style={styles.rowDivider} />
 
-          {/* Account Management & Deletion */}
-          <GlassCard contentStyle={styles.sectionCard}>
-            <Text style={styles.sectionHeader} numberOfLines={1}>Account Management</Text>
+                  {/* Row 3: Admin Review Feedback */}
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    onPress={() => setShowAdminFeedbackModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.rowIconCircle, { backgroundColor: colors.dangerLight, borderColor: 'rgba(220, 38, 38, 0.2)' }]}>
+                      <Ionicons name="shield-checkmark-outline" size={17} color={colors.danger} />
+                    </View>
+                    <View style={styles.rowTextCol}>
+                      <View style={styles.rowTitleBadgeWrap}>
+                        <Text style={styles.rowTitle} numberOfLines={1}>Admin: Review Feedback</Text>
+                        <View style={styles.adminTag}>
+                          <Text style={styles.adminTagText}>ADMIN</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.rowSub} numberOfLines={1}>Read user bug reports & send private replies</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </>
+              )}
 
-            <GlassButton
-              title="Sign Out from Vanko"
-              variant="glass"
-              onPress={handleSignOut}
-              icon={<Ionicons name="log-out-outline" size={16} color={colors.textPrimary} />}
-              style={styles.signOutBtn}
-            />
+              <View style={styles.rowDivider} />
 
-            <GlassButton
-              title="Delete My Account & Data"
-              variant="danger"
-              onPress={() => setShowDeleteModal(true)}
-              icon={<Ionicons name="trash-outline" size={16} color="#FFFFFF" />}
-              style={styles.deleteBtn}
-            />
-          </GlassCard>
+              {/* Row 4: Privacy Policy */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                onPress={handleOpenPrivacyPolicy}
+                activeOpacity={0.7}
+              >
+                <View style={styles.rowIconCircle}>
+                  <Ionicons name="document-text-outline" size={17} color={colors.textPrimary} />
+                </View>
+                <View style={styles.rowTextCol}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>Privacy Policy</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>Data governance and protection practices</Text>
+                </View>
+                <Ionicons name="open-outline" size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
+
+              <View style={styles.rowDivider} />
+
+              {/* Row 5: Support Desk */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                onPress={() => Linking.openURL('mailto:supportvanko@gmail.com').catch(() => {})}
+                activeOpacity={0.7}
+              >
+                <View style={styles.rowIconCircle}>
+                  <Ionicons name="mail-outline" size={17} color={colors.textPrimary} />
+                </View>
+                <View style={styles.rowTextCol}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>Support & Grievances</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>supportvanko@gmail.com</Text>
+                </View>
+                <Ionicons name="open-outline" size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </GlassCard>
+          </View>
+
+          {/* SECTION 4: ACCOUNT ACTIONS */}
+          <View style={styles.sectionGroup}>
+            <Text style={styles.sectionGroupTitle}>Account Actions</Text>
+            <GlassCard contentStyle={styles.groupedCardContent}>
+              {/* Row 1: Sign Out */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                onPress={handleSignOut}
+                activeOpacity={0.7}
+              >
+                <View style={styles.rowIconCircle}>
+                  <Ionicons name="log-out-outline" size={17} color={colors.textPrimary} />
+                </View>
+                <View style={styles.rowTextCol}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>Sign Out</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>End your session on this device</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={17} color={colors.textTertiary} />
+              </TouchableOpacity>
+
+              <View style={styles.rowDivider} />
+
+              {/* Row 2: Delete Account */}
+              <TouchableOpacity
+                style={styles.menuRow}
+                onPress={() => setShowDeleteModal(true)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.rowIconCircle, { backgroundColor: colors.dangerLight, borderColor: 'rgba(220, 38, 38, 0.2)' }]}>
+                  <Ionicons name="trash-outline" size={17} color={colors.danger} />
+                </View>
+                <View style={styles.rowTextCol}>
+                  <Text style={[styles.rowTitle, { color: colors.danger }]} numberOfLines={1}>Delete Account</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>Permanently erase all personal data & events</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={17} color={colors.danger} />
+              </TouchableOpacity>
+            </GlassCard>
+          </View>
 
           <Text style={styles.versionFooter} numberOfLines={1}>
-            Vanko v{Constants.expoConfig?.version ?? '1.0.2'}
+            Vanko v{Constants.expoConfig?.version ?? '1.0.3'}
           </Text>
         </ScrollView>
 
@@ -379,6 +552,15 @@ export default function SettingsScreen() {
           onClose={() => setShowCollegeModal(false)}
           currentCollege={user?.college}
           isEditing
+        />
+        <AlarmReliabilityModal
+          visible={showReliabilityModal}
+          onClose={() => setShowReliabilityModal(false)}
+        />
+        <McpTokenModal
+          visible={showMcpModal}
+          token={mcpToken}
+          onClose={() => setShowMcpModal(false)}
         />
       </View>
     </SafeAreaView>
@@ -446,7 +628,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    backgroundColor: colors.canvasSubtle,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radii.pill,
@@ -455,7 +639,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(239, 68, 68, 0.14)',
+    backgroundColor: colors.dangerLight,
+    borderWidth: 1,
+    borderColor: 'rgba(220, 38, 38, 0.2)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radii.pill,
@@ -468,7 +654,7 @@ const styles = StyleSheet.create({
   roleBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.textSecondary,
   },
   refreshBadgeBtn: {
     flexDirection: 'row',
@@ -486,22 +672,50 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textSecondary,
   },
-  sectionCard: {
-    padding: 16,
-    gap: 14,
+  sectionGroup: {
+    gap: 6,
   },
-  sectionHeader: {
-    fontSize: 13,
+  sectionGroupTitle: {
+    fontSize: 11,
     fontWeight: '700',
-    color: colors.textPrimary,
+    color: colors.textTertiary,
     textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    letterSpacing: 0.6,
+    marginLeft: 4,
   },
-  sectionHeaderRow: {
+  groupedCardContent: {
+    paddingVertical: 2,
+    paddingHorizontal: 16,
+  },
+  menuRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    gap: 12,
+    paddingVertical: 12,
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: colors.glassBorder,
+    marginLeft: 48,
+  },
+  rowTitleBadgeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  mcpPill: {
+    backgroundColor: colors.canvasSubtle,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: radii.pill,
+  },
+  mcpPillText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    letterSpacing: 0.4,
   },
   campusPill: {
     flexDirection: 'row',
@@ -510,52 +724,71 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2.5,
     borderRadius: radii.pill,
+    flexShrink: 0,
   },
   campusPillSies: {
-    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    backgroundColor: colors.canvasSubtle,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.25)',
+    borderColor: colors.glassBorder,
   },
   campusPillOther: {
-    backgroundColor: 'rgba(148, 163, 184, 0.14)',
+    backgroundColor: colors.canvasSubtle,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.25)',
+    borderColor: colors.glassBorder,
   },
   campusPillText: {
     fontSize: 10,
     fontWeight: '700',
   },
   campusPillTextSies: {
-    color: colors.primary,
+    color: colors.textPrimary,
   },
   campusPillTextOther: {
     color: colors.textSecondary,
   },
-  rowItem: {
+  statusPill: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  statusPillOptimal: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  statusPillWarning: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  statusPillTextOptimal: {
+    color: '#16A34A',
+  },
+  statusPillTextWarning: {
+    color: '#D97706',
   },
   rowIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: radii.control - 4,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: colors.canvasSubtle,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.glassBorder,
+    flexShrink: 0,
   },
   rowTextCol: {
     flex: 1,
     gap: 2,
     minWidth: 0,
-  },
-  liveBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 6,
   },
   livePill: {
     flexDirection: 'row',
@@ -565,6 +798,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: radii.pill,
     gap: 4,
+    flexShrink: 0,
   },
   livePulseDot: {
     width: 6,
@@ -578,6 +812,20 @@ const styles = StyleSheet.create({
     color: colors.success,
     letterSpacing: 0.5,
   },
+  adminTag: {
+    backgroundColor: colors.dangerLight,
+    borderWidth: 1,
+    borderColor: 'rgba(220, 38, 38, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radii.pill,
+  },
+  adminTagText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.danger,
+    letterSpacing: 0.3,
+  },
   rowTitle: {
     fontSize: 13,
     fontWeight: '600',
@@ -588,52 +836,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     lineHeight: 16,
-  },
-  signOutBtn: {
-    minHeight: 46,
-    marginTop: 4,
-  },
-  deleteBtn: {
-    minHeight: 46,
-    marginTop: 6,
-  },
-  touchableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 6,
-  },
-  grievanceCard: {
-    padding: 12,
-    borderRadius: radii.control,
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
-    gap: 6,
-    marginTop: 6,
-  },
-  grievanceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  grievanceTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  grievanceText: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    lineHeight: 16,
-  },
-  boldText: {
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  linkUnderline: {
-    color: colors.primary,
-    fontWeight: '600',
   },
   versionFooter: {
     textAlign: 'center',

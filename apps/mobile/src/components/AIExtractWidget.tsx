@@ -38,7 +38,7 @@ export const AIExtractWidget: React.FC<AIExtractWidgetProps> = ({
       <View style={styles.topRow}>
         <View style={styles.badgeWrap}>
           <Ionicons name="sparkles-outline" size={13} color={colors.textPrimary} />
-          <Text style={styles.badgeText} numberOfLines={1}>Smart Extraction</Text>
+          <Text style={styles.badgeText} numberOfLines={1}>Schedule Scanner</Text>
         </View>
         <Text style={styles.speedText} numberOfLines={1}>Instant</Text>
       </View>
@@ -56,7 +56,7 @@ export const AIExtractWidget: React.FC<AIExtractWidgetProps> = ({
           activeOpacity={0.8}
         >
           <Ionicons name="clipboard-outline" size={13} color={colors.textPrimary} />
-          <Text style={styles.actionChipText} numberOfLines={1}>Open Studio</Text>
+          <Text style={styles.actionChipText} numberOfLines={1}>Scan Announcement</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -73,7 +73,7 @@ export const AIExtractWidget: React.FC<AIExtractWidgetProps> = ({
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.input}
-          placeholder="Paste message text here..."
+          placeholder="Paste announcement message here..."
           placeholderTextColor={colors.textTertiary}
           value={quickText}
           onChangeText={setQuickText}

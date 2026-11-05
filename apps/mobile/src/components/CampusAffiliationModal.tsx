@@ -83,7 +83,7 @@ export function CampusAffiliationModal({
             {/* Header */}
             <View style={styles.headerRow}>
               <View style={styles.iconCircle}>
-                <Ionicons name="school" size={22} color={colors.primary} />
+                <Ionicons name="school-outline" size={20} color={colors.textPrimary} />
               </View>
               <View style={styles.headerTextWrap}>
                 <Text style={styles.title} numberOfLines={1}>
@@ -119,7 +119,7 @@ export function CampusAffiliationModal({
               >
                 <View style={styles.optionHeader}>
                   <View style={[styles.badge, styles.siesBadge]}>
-                    <Ionicons name="shield-checkmark" size={10} color={colors.primary} />
+                    <Ionicons name="shield-checkmark" size={10} color={colors.textPrimary} />
                     <Text style={styles.siesBadgeText}>SIES GST CAMPUS</Text>
                   </View>
                   <View
@@ -217,7 +217,7 @@ export function CampusAffiliationModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
@@ -232,23 +232,27 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 12,
     marginBottom: 16,
   },
   iconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.canvasSubtle,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   headerTextWrap: {
     flex: 1,
+    minWidth: 0,
   },
   title: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: colors.textPrimary,
     letterSpacing: -0.3,
@@ -261,6 +265,7 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     padding: 4,
+    flexShrink: 0,
   },
   optionsWrap: {
     gap: 10,
@@ -269,13 +274,13 @@ const styles = StyleSheet.create({
   optionCard: {
     padding: 14,
     borderRadius: radii.control,
-    backgroundColor: 'rgba(255, 255, 255, 0.65)',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
-    borderColor: 'rgba(226, 232, 240, 0.9)',
+    borderColor: colors.glassBorder,
   },
   optionCardActive: {
     borderColor: colors.primary,
-    backgroundColor: 'rgba(99, 102, 241, 0.06)',
+    backgroundColor: colors.canvasSubtle,
   },
   optionHeader: {
     flexDirection: 'row',
@@ -292,16 +297,20 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   siesBadge: {
-    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    backgroundColor: colors.canvasSubtle,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
   },
   siesBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.textPrimary,
     letterSpacing: 0.2,
   },
   otherBadge: {
-    backgroundColor: 'rgba(148, 163, 184, 0.16)',
+    backgroundColor: colors.canvasSubtle,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
   },
   otherBadgeText: {
     fontSize: 10,
@@ -314,7 +323,7 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    borderColor: colors.glassBorder,
     justifyContent: 'center',
     alignItems: 'center',
   },

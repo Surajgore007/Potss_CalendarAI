@@ -1,0 +1,35 @@
+{
+  "name": "@eventpulse/mcp-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server for Vanko Calendar - Chat about your schedule with Claude & ChatGPT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "vanko-mcp": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "chatgpt",
+    "calendar",
+    "vanko"
+  ],
+  "author": "Vanko",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
+

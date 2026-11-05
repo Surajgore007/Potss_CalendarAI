@@ -295,6 +295,77 @@ export const EditableEventCard: React.FC<EditableEventCardProps> = ({
             </View>
           </View>
 
+          {/* Critical Deadline Alarm Toggle */}
+          <View style={styles.alarmToggleBox}>
+            <View style={styles.alarmHeaderRow}>
+              <View style={styles.alarmLeftWrap}>
+                <View style={[styles.alarmIconBadge, event.has_critical_alarm ? styles.alarmIconBadgeActive : styles.alarmIconBadgeInactive]}>
+                  <Ionicons
+                    name={event.has_critical_alarm ? "alarm" : "alarm-outline"}
+                    size={16}
+                    color={event.has_critical_alarm ? "#FFFFFF" : colors.textTertiary}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.alarmTitle}>CRITICAL DEADLINE ALARM</Text>
+                  <Text style={styles.alarmSub}>
+                    {event.has_critical_alarm
+                      ? "Rings an insistent loud alarm on your phone"
+                      : "Arm repeating alarm so you never miss this cutoff"}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.alarmSwitch, event.has_critical_alarm ? styles.alarmSwitchOn : styles.alarmSwitchOff]}
+                onPress={() => {
+                  const nextVal = !event.has_critical_alarm;
+                  handleChange('has_critical_alarm', nextVal);
+                  if (nextVal && !event.alarm_offsets) {
+                    handleChange('alarm_offsets', [120, 15]);
+                  }
+                  handleChange('alarm_time_assumed', !event.time);
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.alarmThumb, event.has_critical_alarm && styles.alarmThumbOn]} />
+              </TouchableOpacity>
+            </View>
+
+            {event.has_critical_alarm && (
+              <View style={styles.alarmConfigWrap}>
+                <Text style={styles.alarmConfigLabel}>ALARM ESCALATION STAGES:</Text>
+                <View style={styles.alarmPresetsRow}>
+                  {[
+                    { label: '2h & 15m (Default)', offsets: [120, 15] },
+                    { label: '1h & 15m', offsets: [60, 15] },
+                    { label: 'At Deadline Only', offsets: [0] },
+                  ].map((preset, idx) => {
+                    const currentOffsets = event.alarm_offsets || [120, 15];
+                    const isSel = JSON.stringify(currentOffsets) === JSON.stringify(preset.offsets);
+                    return (
+                      <TouchableOpacity
+                        key={idx}
+                        style={[styles.alarmPresetChip, isSel && styles.alarmPresetChipActive]}
+                        onPress={() => handleChange('alarm_offsets', preset.offsets)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.alarmPresetText, isSel && styles.alarmPresetTextActive]}>
+                          {preset.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {!event.time && (
+                  <Text style={styles.alarmNote}>
+                    ℹ️ Time not specified: assumed 11:59 PM. Alarm will ring at 9:59 PM.
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+
           {/* Location & Link */}
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>LOCATION / VENUE</Text>
@@ -553,5 +624,114 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  alarmToggleBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: radii.control,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 4,
+    gap: 8,
+  },
+  alarmHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  alarmLeftWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  alarmIconBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alarmIconBadgeActive: {
+    backgroundColor: '#D97706',
+  },
+  alarmIconBadgeInactive: {
+    backgroundColor: '#F1F5F9',
+  },
+  alarmTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    color: '#0F172A',
+  },
+  alarmSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  alarmSwitch: {
+    width: 40,
+    height: 24,
+    borderRadius: 12,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  alarmSwitchOn: {
+    backgroundColor: '#D97706',
+  },
+  alarmSwitchOff: {
+    backgroundColor: '#CBD5E1',
+  },
+  alarmThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  alarmThumbOn: {
+    alignSelf: 'flex-end',
+  },
+  alarmConfigWrap: {
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+    gap: 6,
+  },
+  alarmConfigLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.4,
+  },
+  alarmPresetsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  alarmPresetChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  alarmPresetChipActive: {
+    backgroundColor: '#D97706',
+    borderColor: '#B45309',
+  },
+  alarmPresetText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  alarmPresetTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  alarmNote: {
+    fontSize: 10,
+    color: '#64748B',
+    lineHeight: 14,
   },
 });

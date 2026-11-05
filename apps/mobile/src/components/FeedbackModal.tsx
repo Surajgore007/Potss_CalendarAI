@@ -126,7 +126,7 @@ export function FeedbackModal({ visible, onClose, initialTab = 'compose' }: Feed
           category,
           message: cleanMessage,
           platform: Platform.OS,
-          appVersion: '1.0.0',
+          appVersion: '1.0.3',
         }),
       });
 
@@ -166,11 +166,11 @@ export function FeedbackModal({ visible, onClose, initialTab = 'compose' }: Feed
               <View style={styles.headerRow}>
                 <View style={styles.headerLeft}>
                   <View style={styles.headerIconCircle}>
-                    <Ionicons name="chatbubbles-outline" size={18} color={colors.primary} />
+                    <Ionicons name="chatbubbles-outline" size={18} color={colors.textPrimary} />
                   </View>
-                  <View>
-                    <Text style={styles.headerTitle}>Send Feedback</Text>
-                    <Text style={styles.headerSubtitle}>Direct to Platform Developers (Admin-Only)</Text>
+                  <View style={styles.headerTextWrap}>
+                    <Text style={styles.headerTitle} numberOfLines={1}>Send Feedback</Text>
+                    <Text style={styles.headerSubtitle} numberOfLines={1}>Direct to the Vanko team</Text>
                   </View>
                 </View>
                 <TouchableOpacity
@@ -278,13 +278,14 @@ export function FeedbackModal({ visible, onClose, initialTab = 'compose' }: Feed
                             <Ionicons
                               name={cat.icon}
                               size={13}
-                              color={isSelected ? colors.primary : colors.textSecondary}
+                              color={isSelected ? '#FFFFFF' : colors.textSecondary}
                             />
                             <Text
                               style={[
                                 styles.categoryLabel,
                                 isSelected && styles.categoryLabelSelected,
                               ]}
+                              numberOfLines={1}
                             >
                               {cat.label}
                             </Text>
@@ -357,14 +358,14 @@ export function FeedbackModal({ visible, onClose, initialTab = 'compose' }: Feed
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
   },
   keyboardView: {
     width: '100%',
-    maxWidth: 460,
+    maxWidth: 440,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -373,7 +374,7 @@ const styles = StyleSheet.create({
     maxHeight: '88%',
   },
   card: {
-    padding: 16,
+    padding: 18,
     borderRadius: radii.card,
     maxHeight: '100%',
   },
@@ -390,14 +391,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   headerIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.canvasSubtle,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   headerTitle: {
     fontSize: 15,
@@ -405,11 +415,13 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   headerSubtitle: {
-    fontSize: 10,
-    color: colors.textTertiary,
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   closeBtn: {
     padding: 4,
+    flexShrink: 0,
   },
   bodyScroll: {
     flexShrink: 1,
@@ -442,7 +454,7 @@ const styles = StyleSheet.create({
     borderColor: colors.glassBorder,
   },
   categoryPillSelected: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
   categoryLabel: {
@@ -451,8 +463,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   categoryLabelSelected: {
-    color: colors.primary,
-    fontWeight: '600',
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   messageBlock: {
     gap: 4,
@@ -516,7 +528,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.control,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.glassBorder,
     gap: 8,
   },
   replyCardHeader: {
@@ -544,12 +556,12 @@ const styles = StyleSheet.create({
   },
   replyAdminText: {
     fontSize: 13,
-    color: '#0F172A',
+    color: colors.textPrimary,
     lineHeight: 19,
     fontWeight: '500',
   },
   originalQueryBox: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.canvasSubtle,
     borderRadius: 6,
     padding: 8,
     borderLeftWidth: 3,
@@ -569,12 +581,12 @@ const styles = StyleSheet.create({
   textInput: {
     minHeight: 88,
     maxHeight: 125,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.canvasSubtle,
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    borderColor: colors.glassBorder,
     borderRadius: radii.control,
     padding: 12,
-    color: '#0F172A',
+    color: colors.textPrimary,
     fontSize: 14,
     lineHeight: 20,
     fontWeight: '500',

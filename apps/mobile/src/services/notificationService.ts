@@ -179,7 +179,7 @@ export async function scheduleEventNotifications(event: CalendarEvent, hasPermis
               body: isUrgent
                 ? `Registration closes in 2 hours for "${event.title}". Submit your entry now!`
                 : `Registration for "${event.title}" closes in ${tier.label}. Don't miss out!`,
-              data: { eventId: event.id, type: 'deadline', tier: tier.offsetHours },
+              data: { eventId: event.id, type: 'deadline', tier: tier.offsetHours, url: `/event/${event.id}` },
               sound: true,
             },
             trigger: {
@@ -216,7 +216,7 @@ export async function scheduleEventNotifications(event: CalendarEvent, hasPermis
               body: isUrgent
                 ? `"${event.title}" starts in 2 hours${event.location ? ` at ${event.location}` : ''}! Get ready.`
                 : `"${event.title}" kicks off in ${tier.label}. Check schedule and details!`,
-              data: { eventId: event.id, type: 'event_start', tier: tier.offsetHours },
+              data: { eventId: event.id, type: 'event_start', tier: tier.offsetHours, url: `/event/${event.id}` },
               sound: true,
             },
             trigger: {

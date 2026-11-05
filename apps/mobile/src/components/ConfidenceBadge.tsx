@@ -20,7 +20,7 @@ export const ConfidenceBadge: React.FC<ConfidenceBadgeProps> = ({ score }) => {
     <View style={[styles.container, { backgroundColor: bgColor, borderColor: `${color}35` }]}>
       <Ionicons name={iconName as any} size={11} color={color} style={{ marginRight: 4 }} />
       <Text style={[styles.text, { color }]}>
-        {isLow ? `AI: ${percentage}% (Check)` : `AI: ${percentage}%`}
+        {isLow ? 'Review Details' : 'Auto-detected'}
       </Text>
     </View>
   );

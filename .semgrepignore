@@ -1,0 +1,11 @@
+# Semgrep Ignore Configuration
+# Ignore temporary test files, scans, and binary builds
+semgrep-results.json
+*.apk
+dist/
+build/
+android/
+ios/
+node_modules/
+.expo/
+

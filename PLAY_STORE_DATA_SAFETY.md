@@ -4,7 +4,7 @@
 **Package Name:** `com.suraj.eventpulse`  
 **Privacy Policy URL:** `https://vanko-api.vanko-app.workers.dev/privacy-policy`  
 **Account Deletion URL:** `https://vanko-api.vanko-app.workers.dev/delete-account`  
-**Version:** 1.0.0 (September 2026)  
+**Version:** 1.0.3 (November 2026)  
 
 Use this document to answer the **Data Safety** section in Google Play Console with 100% technical fidelity to the codebase.
 

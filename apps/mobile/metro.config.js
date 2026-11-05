@@ -6,8 +6,8 @@ const monorepoRoot = path.resolve(projectRoot, '../..');
 
 const config = getDefaultConfig(projectRoot);
 
-// 1. Watch all files within the monorepo
-config.watchFolders = [monorepoRoot];
+// 1. Watch all files within the monorepo while preserving defaults
+config.watchFolders = [...(config.watchFolders || []), monorepoRoot];
 
 // 2. Search workspace, shared package, and monorepo node_modules
 config.resolver.nodeModulesPaths = [
@@ -24,7 +24,18 @@ if (!config.resolver.sourceExts.includes('cjs')) {
   config.resolver.sourceExts.push('cjs');
 }
 
-// Keep all package resolution within the two workspace node_modules folders.
-config.resolver.disableHierarchicalLookup = true;
+config.resolver.extraNodeModules = {
+  '@eventpulse/shared': path.resolve(monorepoRoot, 'packages/shared'),
+};
+
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === '@eventpulse/shared') {
+    return {
+      filePath: path.resolve(monorepoRoot, 'packages/shared/dist/index.js'),
+      type: 'sourceFile',
+    };
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
 
 module.exports = config;

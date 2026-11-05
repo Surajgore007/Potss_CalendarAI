@@ -17,7 +17,7 @@ import { useRouter } from 'expo-router';
 import { decrementUserRegistration } from '@eventpulse/shared';
 import { useAuth } from '../context/AuthContext';
 import { unregisterPushTokenAsync } from '../services/pushNotificationService';
-import { colors, radii } from '../theme/tokens';
+import { colors, radii, shadows } from '../theme/tokens';
 
 interface DeleteAccountModalProps {
   visible: boolean;
@@ -140,150 +140,153 @@ export function DeleteAccountModal({ visible, onClose }: DeleteAccountModalProps
       animationType="fade"
       onRequestClose={handleClose}
     >
-      <KeyboardAvoidingView
-        style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+      <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.keyboardView}
         >
-          <View style={styles.card}>
-            {/* Close Button */}
-            {!isProcessing && !isDone && (
-              <TouchableOpacity
-                onPress={handleClose}
-                style={styles.closeBtn}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Ionicons name="close" size={20} color="#64748B" />
-              </TouchableOpacity>
-            )}
-
-            {isDone ? (
-              /* Success / Deleted State */
-              <View style={styles.statusState}>
-                <View style={styles.successIconCircle}>
-                  <Ionicons name="checkmark" size={32} color="#16A34A" />
-                </View>
-                <Text style={styles.statusTitle}>Account Permanently Deleted</Text>
-                <Text style={styles.statusDesc}>
-                  All your personal data, calendar events, and credentials have been erased from the platform.
-                </Text>
-                <Text style={styles.redirectingText}>Redirecting to login...</Text>
-              </View>
-            ) : isProcessing ? (
-              /* Processing State */
-              <View style={styles.statusState}>
-                <ActivityIndicator size="large" color="#DC2626" />
-                <Text style={styles.statusTitle}>Permanently Deleting Data...</Text>
-                <Text style={styles.statusDesc}>
-                  Erasing events, notifications, cloud profile, and platform registration.
-                </Text>
-              </View>
-            ) : (
-              /* Main Confirmation Dialog */
-              <View style={styles.contentWrap}>
-                {/* Danger Icon Badge */}
-                <View style={styles.dangerIconBadge}>
-                  <Ionicons name="trash-outline" size={24} color="#DC2626" />
-                </View>
-
-                {/* Header Titles */}
-                <View style={styles.headerTitles}>
-                  <Text style={styles.modalTitle}>Delete Account Permanently?</Text>
-                  <Text style={styles.modalSubtitle}>
-                    This action is immediate and cannot be undone. All your data will be permanently removed.
-                  </Text>
-                </View>
-
-                {/* Target Account Pill */}
-                <View style={styles.accountPill}>
-                  <Ionicons name="person-circle-outline" size={18} color="#64748B" />
-                  <Text style={styles.accountPillText} numberOfLines={1}>
-                    {user?.email || 'Current Account'}
-                  </Text>
-                </View>
-
-                {/* Deletion Summary Checklist */}
-                <View style={styles.checklistCard}>
-                  <Text style={styles.checklistTitle}>The following data will be erased:</Text>
-                  <View style={styles.checklistItem}>
-                    <Ionicons name="remove-circle-outline" size={15} color="#DC2626" />
-                    <Text style={styles.checklistItemText}>Personal profile & authentication credentials</Text>
+          <View style={styles.modalContainer}>
+            <View style={styles.card}>
+              {/* Header */}
+              <View style={styles.headerRow}>
+                <View style={styles.headerLeft}>
+                  <View style={styles.dangerIconBadge}>
+                    <Ionicons name="trash-outline" size={18} color="#DC2626" />
                   </View>
-                  <View style={styles.checklistItem}>
-                    <Ionicons name="remove-circle-outline" size={15} color="#DC2626" />
-                    <Text style={styles.checklistItemText}>All synced calendar events, notes & schedules</Text>
-                  </View>
-                  <View style={styles.checklistItem}>
-                    <Ionicons name="remove-circle-outline" size={15} color="#DC2626" />
-                    <Text style={styles.checklistItemText}>Push notification tokens & attendance history</Text>
-                  </View>
-                  <View style={styles.checklistItem}>
-                    <Ionicons name="remove-circle-outline" size={15} color="#DC2626" />
-                    <Text style={styles.checklistItemText}>Platform registered user count decrements</Text>
+                  <View style={styles.headerTextWrap}>
+                    <Text style={styles.modalTitle} numberOfLines={1}>Delete Account</Text>
+                    <Text style={styles.modalSubtitle} numberOfLines={1}>Permanent & irreversible</Text>
                   </View>
                 </View>
-
-                {/* Confirmation Input Field */}
-                <View style={styles.inputSection}>
-                  <Text style={styles.inputLabel}>
-                    To confirm, please type <Text style={styles.codeHighlight}>DELETE</Text> below:
-                  </Text>
-                  <TextInput
-                    style={[
-                      styles.confirmInput,
-                      isConfirmed && styles.confirmInputValid,
-                    ]}
-                    placeholder="Type DELETE"
-                    placeholderTextColor="#94A3B8"
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    value={confirmText}
-                    onChangeText={setConfirmText}
-                    editable={!isProcessing}
-                  />
-                </View>
-
-                {/* Error Banner */}
-                {errorMsg && (
-                  <View style={styles.errorCard}>
-                    <Ionicons name="alert-circle-outline" size={16} color="#DC2626" />
-                    <Text style={styles.errorText}>{errorMsg}</Text>
-                  </View>
-                )}
-
-                {/* Action Buttons */}
-                <View style={styles.buttonRow}>
+                {!isProcessing && !isDone && (
                   <TouchableOpacity
-                    style={styles.cancelButton}
                     onPress={handleClose}
-                    activeOpacity={0.7}
-                    disabled={isProcessing}
+                    style={styles.closeBtn}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   >
-                    <Text style={styles.cancelButtonText}>Keep Account</Text>
+                    <Ionicons name="close" size={20} color={colors.textSecondary} />
                   </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.deleteButton,
-                      !isConfirmed && styles.deleteButtonDisabled,
-                    ]}
-                    onPress={handleExecuteDeletion}
-                    activeOpacity={0.8}
-                    disabled={!isConfirmed || isProcessing}
-                  >
-                    <Ionicons name="trash" size={16} color="#FFFFFF" />
-                    <Text style={styles.deleteButtonText}>Delete Forever</Text>
-                  </TouchableOpacity>
-                </View>
+                )}
               </View>
-            )}
+
+              {isDone ? (
+                /* Success / Deleted State */
+                <View style={styles.statusState}>
+                  <View style={styles.successIconCircle}>
+                    <Ionicons name="checkmark" size={32} color="#16A34A" />
+                  </View>
+                  <Text style={styles.statusTitle}>Account Permanently Deleted</Text>
+                  <Text style={styles.statusDesc}>
+                    All your personal data, calendar events, and credentials have been erased from the platform.
+                  </Text>
+                  <Text style={styles.redirectingText}>Redirecting to login...</Text>
+                </View>
+              ) : isProcessing ? (
+                /* Processing State */
+                <View style={styles.statusState}>
+                  <ActivityIndicator size="large" color="#DC2626" />
+                  <Text style={styles.statusTitle}>Permanently Deleting Data...</Text>
+                  <Text style={styles.statusDesc}>
+                    Erasing events, notifications, cloud profile, and platform registration.
+                  </Text>
+                </View>
+              ) : (
+                /* Content Body + Footer */
+                <>
+                  <ScrollView
+                    style={styles.bodyScroll}
+                    contentContainerStyle={styles.bodyScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    bounces={false}
+                  >
+                    {/* Target Account Pill */}
+                    <View style={styles.accountPill}>
+                      <Ionicons name="person-circle-outline" size={16} color="#64748B" />
+                      <Text style={styles.accountPillText} numberOfLines={1}>
+                        {user?.email || 'Current Account'}
+                      </Text>
+                    </View>
+
+                    {/* Warning Card */}
+                    <View style={styles.warningCard}>
+                      <View style={styles.warningHeader}>
+                        <Ionicons name="alert-circle-outline" size={15} color="#DC2626" />
+                        <Text style={styles.warningTitle}>The following data will be wiped:</Text>
+                      </View>
+                      <View style={styles.bulletRow}>
+                        <View style={styles.bulletDot} />
+                        <Text style={styles.bulletText}>Personal profile & authentication credentials</Text>
+                      </View>
+                      <View style={styles.bulletRow}>
+                        <View style={styles.bulletDot} />
+                        <Text style={styles.bulletText}>All synced calendar events, notes & schedules</Text>
+                      </View>
+                      <View style={styles.bulletRow}>
+                        <View style={styles.bulletDot} />
+                        <Text style={styles.bulletText}>Push notification tokens & session keys</Text>
+                      </View>
+                    </View>
+
+                    {/* Confirmation Input Field */}
+                    <View style={styles.inputSection}>
+                      <Text style={styles.inputLabel}>
+                        To confirm, type <Text style={styles.codeHighlight}>DELETE</Text> below:
+                      </Text>
+                      <TextInput
+                        style={[
+                          styles.confirmInput,
+                          isConfirmed && styles.confirmInputValid,
+                        ]}
+                        placeholder="Type DELETE"
+                        placeholderTextColor="#94A3B8"
+                        autoCapitalize="characters"
+                        autoCorrect={false}
+                        value={confirmText}
+                        onChangeText={setConfirmText}
+                        editable={!isProcessing}
+                      />
+                    </View>
+
+                    {/* Error Banner */}
+                    {errorMsg && (
+                      <View style={styles.errorCard}>
+                        <Ionicons name="alert-circle-outline" size={16} color="#DC2626" />
+                        <Text style={styles.errorText}>{errorMsg}</Text>
+                      </View>
+                    )}
+                  </ScrollView>
+
+                  {/* Fixed Bottom Action Buttons */}
+                  <View style={styles.buttonRow}>
+                    <TouchableOpacity
+                      style={styles.cancelButton}
+                      onPress={handleClose}
+                      activeOpacity={0.7}
+                      disabled={isProcessing}
+                    >
+                      <Text style={styles.cancelButtonText} numberOfLines={1}>Keep Account</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.deleteButton,
+                        !isConfirmed && styles.deleteButtonDisabled,
+                      ]}
+                      onPress={handleExecuteDeletion}
+                      activeOpacity={0.8}
+                      disabled={!isConfirmed || isProcessing}
+                    >
+                      <Ionicons name="trash" size={15} color="#FFFFFF" />
+                      <Text style={styles.deleteButtonText} numberOfLines={1}>Delete Forever</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -291,236 +294,261 @@ export function DeleteAccountModal({ visible, onClose }: DeleteAccountModalProps
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 16,
   },
-  scrollContent: {
-    flexGrow: 1,
+  keyboardView: {
+    width: '100%',
+    maxWidth: 420,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  modalContainer: {
     width: '100%',
+    maxHeight: '90%',
   },
   card: {
     width: '100%',
-    maxWidth: 420,
+    maxHeight: '100%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
+    borderRadius: radii.card,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
-    position: 'relative',
+    borderColor: colors.glassBorder,
+    ...shadows.overlay,
   },
-  closeBtn: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    zIndex: 10,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F8FAFC',
+  headerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.glassBorder,
+    paddingBottom: 12,
+    marginBottom: 10,
   },
-  contentWrap: {
-    gap: 16,
+  headerLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
   },
-  dangerIconBadge: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  headerTitles: {
-    alignItems: 'center',
-    gap: 6,
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#0F172A',
-    textAlign: 'center',
+    color: colors.textPrimary,
   },
   modalSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 18,
-    paddingHorizontal: 8,
+    fontSize: 11.5,
+    color: colors.danger,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  closeBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.canvasSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  dangerIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.dangerLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(220, 38, 38, 0.2)',
+    flexShrink: 0,
+  },
+  bodyScroll: {
+    flexShrink: 1,
+  },
+  bodyScrollContent: {
+    gap: 12,
+    paddingVertical: 2,
   },
   accountPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F8FAFC',
+    gap: 6,
+    backgroundColor: colors.canvasSubtle,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 12,
+    borderColor: colors.glassBorder,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radii.pill,
+    alignSelf: 'flex-start',
     maxWidth: '100%',
   },
   accountPillText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  checklistCard: {
-    width: '100%',
-    backgroundColor: '#FFF5F5',
-    borderWidth: 1,
-    borderColor: '#FEE2E2',
-    borderRadius: 14,
-    padding: 14,
-    gap: 8,
-  },
-  checklistTitle: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#991B1B',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    flexShrink: 1,
   },
-  checklistItem: {
+  warningCard: {
+    backgroundColor: colors.dangerLight,
+    borderWidth: 1,
+    borderColor: 'rgba(220, 38, 38, 0.2)',
+    borderRadius: radii.control,
+    padding: 10,
+    gap: 6,
+  },
+  warningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  warningTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.danger,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  bulletRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingLeft: 4,
   },
-  checklistItemText: {
-    fontSize: 12.5,
-    color: '#475569',
+  bulletDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.danger,
+  },
+  bulletText: {
+    fontSize: 11.5,
+    color: colors.textPrimary,
     flex: 1,
-    lineHeight: 17,
+    lineHeight: 16,
   },
   inputSection: {
-    width: '100%',
-    gap: 8,
+    gap: 6,
   },
   inputLabel: {
-    fontSize: 13,
+    fontSize: 11.5,
     fontWeight: '600',
-    color: '#334155',
+    color: colors.textSecondary,
   },
   codeHighlight: {
     fontWeight: '800',
-    color: '#DC2626',
+    color: colors.danger,
     letterSpacing: 0.5,
   },
   confirmInput: {
     width: '100%',
-    height: 48,
-    backgroundColor: '#FFFFFF',
+    height: 44,
+    backgroundColor: colors.canvasSubtle,
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    fontSize: 15,
+    borderColor: colors.glassBorder,
+    borderRadius: radii.control,
+    paddingHorizontal: 12,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#0F172A',
+    color: colors.textPrimary,
     letterSpacing: 1.5,
   },
   confirmInputValid: {
-    borderColor: '#DC2626',
-    backgroundColor: '#FEF2F2',
+    borderColor: colors.danger,
+    backgroundColor: colors.dangerLight,
   },
   errorCard: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.dangerLight,
     borderWidth: 1,
-    borderColor: '#FCA5A5',
-    borderRadius: 10,
+    borderColor: 'rgba(220, 38, 38, 0.3)',
+    borderRadius: radii.control,
     padding: 10,
   },
   errorText: {
     flex: 1,
     fontSize: 12,
-    color: '#DC2626',
+    color: colors.danger,
   },
   buttonRow: {
-    width: '100%',
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
+    gap: 8,
+    paddingTop: 12,
+    marginTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.glassBorder,
   },
   cancelButton: {
     flex: 1,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
+    height: 42,
+    borderRadius: radii.control,
+    backgroundColor: colors.canvasSubtle,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 8,
   },
   cancelButtonText: {
-    fontSize: 14,
+    fontSize: 12.5,
     fontWeight: '600',
-    color: '#475569',
+    color: colors.textPrimary,
   },
   deleteButton: {
-    flex: 1.3,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: '#DC2626',
+    flex: 1.2,
+    height: 42,
+    borderRadius: radii.control,
+    backgroundColor: colors.danger,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#DC2626',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
+    gap: 6,
+    paddingHorizontal: 8,
   },
   deleteButtonDisabled: {
     opacity: 0.45,
-    backgroundColor: '#94A3B8',
-    shadowOpacity: 0,
-    elevation: 0,
+    backgroundColor: colors.textTertiary,
   },
   deleteButtonText: {
-    fontSize: 14,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#FFFFFF',
   },
   statusState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 32,
+    paddingVertical: 28,
     gap: 12,
   },
   successIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#DCFCE7',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.successLight,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#BBF7D0',
+    borderColor: 'rgba(22, 163, 74, 0.25)',
   },
   statusTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
-    color: '#0F172A',
+    color: colors.textPrimary,
     textAlign: 'center',
   },
   statusDesc: {
-    fontSize: 13,
-    color: '#64748B',
+    fontSize: 12.5,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
     maxWidth: 280,
@@ -528,7 +556,7 @@ const styles = StyleSheet.create({
   redirectingText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#16A34A',
+    color: colors.success,
     marginTop: 4,
   },
 });

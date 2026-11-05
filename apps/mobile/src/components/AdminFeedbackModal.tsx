@@ -219,7 +219,7 @@ export function AdminFeedbackModal({ visible, onClose }: AdminFeedbackModalProps
       case 'bug':
         return { bg: colors.dangerLight, text: colors.danger, icon: 'bug-outline', label: 'Bug' };
       case 'suggestion':
-        return { bg: 'rgba(99, 102, 241, 0.15)', text: colors.primary, icon: 'bulb-outline', label: 'Suggestion' };
+        return { bg: colors.canvasSubtle, text: colors.textPrimary, icon: 'bulb-outline', label: 'Suggestion' };
       case 'complaint':
         return { bg: colors.warningLight, text: colors.warning, icon: 'alert-circle-outline', label: 'Complaint' };
       default:
@@ -256,16 +256,16 @@ export function AdminFeedbackModal({ visible, onClose }: AdminFeedbackModalProps
             <View style={styles.headerRow}>
               <View style={styles.headerLeft}>
                 <View style={styles.headerIconCircle}>
-                  <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} />
+                  <Ionicons name="shield-checkmark-outline" size={18} color={colors.textPrimary} />
                 </View>
-                <View>
+                <View style={styles.headerTextWrap}>
                   <View style={styles.titleBadgeRow}>
-                    <Text style={styles.headerTitle}>User Feedback Inbox</Text>
+                    <Text style={styles.headerTitle} numberOfLines={1}>Feedback Inbox</Text>
                     <View style={styles.adminBadge}>
-                      <Text style={styles.adminBadgeText}>ADMIN ONLY</Text>
+                      <Text style={styles.adminBadgeText}>ADMIN</Text>
                     </View>
                   </View>
-                  <Text style={styles.headerSubtitle}>Direct Submissions • End-to-End Encrypted</Text>
+                  <Text style={styles.headerSubtitle} numberOfLines={1}>User reports & suggestions</Text>
                 </View>
               </View>
               <View style={styles.headerActions}>
@@ -569,7 +569,7 @@ export function AdminFeedbackModal({ visible, onClose }: AdminFeedbackModalProps
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
@@ -598,14 +598,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     flex: 1,
+    minWidth: 0,
+  },
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   headerIconCircle: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    borderRadius: 10,
+    backgroundColor: colors.canvasSubtle,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   titleBadgeRow: {
     flexDirection: 'row',
@@ -618,7 +626,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   adminBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: colors.dangerLight,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: radii.pill,
@@ -661,7 +669,7 @@ const styles = StyleSheet.create({
     borderColor: colors.glassBorder,
   },
   filterPillSelected: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
   filterPillText: {
@@ -670,8 +678,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   filterPillTextSelected: {
-    color: colors.primary,
-    fontWeight: '600',
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   errorBanner: {
     flexDirection: 'row',
@@ -842,7 +850,7 @@ const styles = StyleSheet.create({
   },
   existingReplyText: {
     fontSize: 12,
-    color: '#0F172A',
+    color: colors.textPrimary,
     lineHeight: 17,
     fontWeight: '500',
   },
@@ -867,11 +875,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   replyComposer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.canvasSubtle,
     borderRadius: radii.control,
     padding: 10,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     marginTop: 6,
     gap: 8,
   },
@@ -890,10 +898,10 @@ const styles = StyleSheet.create({
     maxHeight: 120,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.glassBorder,
     borderRadius: radii.control - 4,
     padding: 10,
-    color: '#0F172A',
+    color: colors.textPrimary,
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '500',
@@ -936,7 +944,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: radii.control - 4,
-    backgroundColor: colors.canvasSubtle,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
   },
   composerCancelText: {
     fontSize: 12,
@@ -972,7 +982,7 @@ const styles = StyleSheet.create({
     gap: 5,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: colors.glassBorder,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: radii.pill,

@@ -24,6 +24,9 @@ export interface CalendarEvent {
   confidence_score: number;        // 0.0 - 1.0
   tags: string[];
   reminder_offsets: number[];      // Offsets in minutes relative to target date (e.g. 4320=3d, 1440=1d, 0=day-of)
+  has_critical_alarm?: boolean;    // If user armed insistent repeating alarm
+  alarm_offsets?: number[];        // Custom alarm offsets in minutes, e.g. [120, 15] (default)
+  alarm_time_assumed?: boolean;    // True if 11:59 PM default assumption was used
   created_at: string;              // ISO timestamp
   updated_at: string;              // ISO timestamp
   status: EventStatus;
@@ -53,6 +56,10 @@ export interface CommunityEvent {
   attendeePreviews?: Record<string, string>; // Map of { [uid]: userInitials }
 }
 
+export type ExtractionConfidence = 'high' | 'medium' | 'low';
+export type LinkStatus = 'found' | 'mentioned_in_comments' | 'none';
+export type LegibilityScore = 'high' | 'medium' | 'low';
+
 export interface ExtractedEvent {
   temp_id: string;
   title: string;
@@ -67,8 +74,16 @@ export interface ExtractedEvent {
   source_group: string | null;
   raw_text: string;
   confidence_score: number;
+  extraction_confidence?: ExtractionConfidence;
+  link_status?: LinkStatus;
+  legibility?: LegibilityScore;
+  is_past_event?: boolean;
+  requires_review?: boolean;
   tags?: string[];
   reminder_offsets?: number[];
+  has_critical_alarm?: boolean;
+  alarm_offsets?: number[];
+  alarm_time_assumed?: boolean;
   destination?: PublishDestination;
   duplicate_warning?: {
     is_duplicate: boolean;

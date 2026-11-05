@@ -179,11 +179,11 @@ export function MyDataModal({ visible, onClose }: MyDataModalProps) {
             <View style={styles.headerRow}>
               <View style={styles.headerLeft}>
                 <View style={styles.iconCircle}>
-                  <Ionicons name="folder-open-outline" size={18} color={colors.primary} />
+                  <Ionicons name="folder-open-outline" size={18} color={colors.textPrimary} />
                 </View>
-                <View>
-                  <Text style={styles.headerTitle}>My Data & Privacy</Text>
-                  <Text style={styles.headerSubtitle}>DPDP Act 2023 Section 11</Text>
+                <View style={styles.headerTextWrap}>
+                  <Text style={styles.headerTitle} numberOfLines={1}>My Data & Privacy</Text>
+                  <Text style={styles.headerSubtitle} numberOfLines={1}>Your Stored Data & Export Tools</Text>
                 </View>
               </View>
               <TouchableOpacity
@@ -201,9 +201,9 @@ export function MyDataModal({ visible, onClose }: MyDataModalProps) {
               contentContainerStyle={styles.bodyScrollContent}
               showsVerticalScrollIndicator={false}
             >
-              {/* Profile Overview (Right to Access & Correction) */}
+              {/* Profile Overview */}
               <View style={styles.section}>
-                <Text style={styles.sectionHeader}>Profile Information (Right to Correct)</Text>
+                <Text style={styles.sectionHeader}>Profile Information</Text>
 
                 <View style={styles.dataRow}>
                   <Text style={styles.dataLabel}>Display Name</Text>
@@ -252,7 +252,7 @@ export function MyDataModal({ visible, onClose }: MyDataModalProps) {
                         style={styles.editIconBtn}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Ionicons name="pencil-outline" size={14} color={colors.primary} />
+                        <Ionicons name="pencil-outline" size={14} color={colors.textPrimary} />
                       </TouchableOpacity>
                     </View>
                   )}
@@ -263,14 +263,14 @@ export function MyDataModal({ visible, onClose }: MyDataModalProps) {
                 )}
 
                 <View style={styles.dataRow}>
-                  <Text style={styles.dataLabel}>Registered Email</Text>
+                  <Text style={styles.dataLabel} numberOfLines={1}>Registered Email</Text>
                   <Text style={styles.dataValue} numberOfLines={1}>
                     {user?.email || 'N/A'}
                   </Text>
                 </View>
 
                 <View style={styles.dataRow}>
-                  <Text style={styles.dataLabel}>Account ID</Text>
+                  <Text style={styles.dataLabel} numberOfLines={1}>Account ID</Text>
                   <Text
                     style={styles.dataMono}
                     numberOfLines={1}
@@ -281,7 +281,7 @@ export function MyDataModal({ visible, onClose }: MyDataModalProps) {
                 </View>
 
                 <View style={styles.dataRow}>
-                  <Text style={styles.dataLabel}>Affiliated Campus</Text>
+                  <Text style={styles.dataLabel} numberOfLines={1}>Affiliated Campus</Text>
                   <Text style={styles.dataValue} numberOfLines={1}>
                     {user?.college || 'General Student'}
                   </Text>
@@ -312,9 +312,9 @@ export function MyDataModal({ visible, onClose }: MyDataModalProps) {
 
               {/* Data Portability (Export) */}
               <View style={styles.section}>
-                <Text style={styles.sectionHeader}>Data Portability (Export)</Text>
+                <Text style={styles.sectionHeader}>Export Personal Data</Text>
                 <Text style={styles.exportDesc}>
-                  Under the DPDP Act 2023, you have the right to receive your personal data in a structured, standard machine-readable JSON & iCalendar file.
+                  Download an offline copy of your entire schedule and profile in structured JSON and standard iCalendar (.ics) formats.
                 </Text>
               </View>
             </ScrollView>
@@ -322,7 +322,7 @@ export function MyDataModal({ visible, onClose }: MyDataModalProps) {
             {/* Footer - Fixed Action Buttons */}
             <View style={styles.footerActions}>
               <GlassButton
-                title="Export My Complete Data (JSON + iCal)"
+                title="Export All Data (JSON & iCal)"
                 variant="primary"
                 onPress={handleExportData}
                 loading={isExporting}
@@ -346,14 +346,14 @@ export function MyDataModal({ visible, onClose }: MyDataModalProps) {
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
   },
   modalContainer: {
     width: '100%',
-    maxWidth: 460,
+    maxWidth: 440,
     maxHeight: '88%',
   },
   card: {
@@ -368,33 +368,44 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderBottomWidth: 1,
     borderBottomColor: colors.glassBorder,
-    paddingBottom: 14,
+    paddingBottom: 12,
     marginBottom: 12,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   iconCircle: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    borderRadius: 10,
+    backgroundColor: colors.canvasSubtle,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: colors.textPrimary,
   },
   headerSubtitle: {
     fontSize: 11,
-    color: colors.textTertiary,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   closeBtn: {
     padding: 4,
+    flexShrink: 0,
   },
   bodyScroll: {
     flexShrink: 1,
@@ -419,7 +430,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: colors.glassBorder,
   },
   dataLabel: {
     fontSize: 13,
@@ -465,7 +476,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 13,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: colors.textPrimary,
     flex: 1,
     maxWidth: 160,
   },

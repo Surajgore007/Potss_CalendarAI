@@ -88,11 +88,11 @@ export function ManageConsentsModal({
             <View style={styles.headerRow}>
               <View style={styles.headerLeft}>
                 <View style={styles.iconCircle}>
-                  <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} />
+                  <Ionicons name="shield-checkmark-outline" size={18} color={colors.textPrimary} />
                 </View>
-                <View>
-                  <Text style={styles.headerTitle}>Manage Data Consents</Text>
-                  <Text style={styles.headerSubtitle}>DPDP Act 2023 Section 6(4)</Text>
+                <View style={styles.headerTextWrap}>
+                  <Text style={styles.headerTitle} numberOfLines={1}>Manage Data Consents</Text>
+                  <Text style={styles.headerSubtitle} numberOfLines={1}>Privacy Choices & Permissions</Text>
                 </View>
               </View>
               <TouchableOpacity
@@ -111,7 +111,7 @@ export function ManageConsentsModal({
               showsVerticalScrollIndicator={false}
             >
               <Text style={styles.introText}>
-                Under the Digital Personal Data Protection Act, 2023, you have the statutory right to review and withdraw consent for data processing purposes at any time.
+                You have complete control over how your data is processed. You can review or adjust your permissions below at any time.
               </Text>
 
               {/* Section 1: Optional Consents */}
@@ -149,8 +149,8 @@ export function ManageConsentsModal({
                   </Text>
                   <View style={styles.essentialNoticeBox}>
                     <Text style={styles.essentialNotice}>
-                      <Text style={styles.boldNotice}>Note on Core Consent Withdrawal: </Text>
-                      Because Vanko&apos;s sole function is storing and organizing your schedule, withdrawing this consent means the service cannot operate without your data. Therefore, withdrawing core consent requires closing your account and permanently erasing your personal data.
+                      <Text style={styles.boldNotice}>Account Closure Notice: </Text>
+                      Vanko requires schedule data to operate. Withdrawing core processing consent will permanently close your account and delete your stored data.
                     </Text>
                   </View>
 
@@ -183,14 +183,14 @@ export function ManageConsentsModal({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
   },
   modalContainer: {
     width: '100%',
-    maxWidth: 460,
+    maxWidth: 440,
     maxHeight: '86%',
   },
   card: {
@@ -198,49 +198,54 @@ const styles = StyleSheet.create({
     borderRadius: radii.card,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E4E4E7',
+    borderColor: colors.glassBorder,
     maxHeight: '100%',
     display: 'flex',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    elevation: 8,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#F4F4F5',
-    paddingBottom: 14,
+    borderBottomColor: colors.glassBorder,
+    paddingBottom: 12,
     marginBottom: 12,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   iconCircle: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    borderRadius: 10,
+    backgroundColor: colors.canvasSubtle,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#18181B',
+    color: colors.textPrimary,
   },
   headerSubtitle: {
     fontSize: 11,
-    color: '#71717A',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   closeBtn: {
     padding: 4,
+    flexShrink: 0,
   },
   bodyScroll: {
     flexShrink: 1,
@@ -251,7 +256,7 @@ const styles = StyleSheet.create({
   },
   introText: {
     fontSize: 12,
-    color: '#52525B',
+    color: colors.textSecondary,
     lineHeight: 18,
   },
   section: {
@@ -260,7 +265,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#18181B',
+    color: colors.textPrimary,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
@@ -270,31 +275,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
     padding: 14,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: colors.canvasSubtle,
     borderRadius: radii.control,
     borderWidth: 1,
-    borderColor: '#E4E4E7',
+    borderColor: colors.glassBorder,
   },
   consentTextCol: {
     flex: 1,
     gap: 4,
+    minWidth: 0,
   },
   consentTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#18181B',
+    color: colors.textPrimary,
   },
   consentDesc: {
     fontSize: 11,
-    color: '#52525B',
+    color: colors.textSecondary,
     lineHeight: 16,
   },
   essentialBox: {
     padding: 14,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: colors.canvasSubtle,
     borderRadius: radii.control,
     borderWidth: 1,
-    borderColor: '#E4E4E7',
+    borderColor: colors.glassBorder,
     gap: 10,
   },
   essentialHeader: {
@@ -305,28 +311,28 @@ const styles = StyleSheet.create({
   essentialTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#18181B',
+    color: colors.textPrimary,
   },
   essentialDesc: {
     fontSize: 12,
-    color: '#3F3F46',
+    color: colors.textSecondary,
     lineHeight: 17,
   },
   essentialNoticeBox: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.dangerLight,
     borderLeftWidth: 3,
-    borderLeftColor: '#DC2626',
+    borderLeftColor: colors.danger,
     padding: 10,
     borderRadius: 6,
   },
   essentialNotice: {
     fontSize: 11,
-    color: '#991B1B',
+    color: colors.danger,
     lineHeight: 16,
   },
   boldNotice: {
     fontWeight: '700',
-    color: '#DC2626',
+    color: colors.danger,
   },
   withdrawBtn: {
     flexDirection: 'row',
@@ -336,14 +342,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: radii.control,
     borderWidth: 1,
-    borderColor: 'rgba(220, 38, 38, 0.3)',
-    backgroundColor: '#FEF2F2',
+    borderColor: 'rgba(220, 38, 38, 0.2)',
+    backgroundColor: colors.dangerLight,
     marginTop: 4,
   },
   withdrawBtnText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#DC2626',
+    color: colors.danger,
   },
   doneBtn: {
     minHeight: 44,

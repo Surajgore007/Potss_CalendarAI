@@ -18,16 +18,43 @@ import {
   purgeExpiredAuditLogs,
   reconcileOrphanedDeletions,
   renderPrivacyPolicyHtml,
+  renderTermsOfServiceHtml,
   renderDeleteAccountHtml,
   sendDeletionOtpEmail,
 } from './compliance';
+import {
+  fetchAllUserEvents,
+  filterEvents,
+  checkConflicts,
+  getDeadlines,
+  createFirestoreEvent,
+  updateFirestoreEventStatus,
+  handleMcpJsonRpc,
+  handleMcpSseConnection,
+  getOpenApiSchema,
+  signPermanentMcpKey,
+  verifyPermanentMcpKey,
+} from './mcp';
+import {
+  handleOAuthProtectedResource,
+  handleOAuthAuthorizationServer,
+  handleOAuthRegister,
+  renderOAuthAuthorizePage,
+  handleOAuthAuthorizePost,
+  handleOAuthToken,
+  verifyOAuthAccessToken,
+} from './oauth';
 
 export interface Env {
+  FIREBASE_WEB_API_KEY?: string;
   GROQ_API_KEY?: string;
   GROQ_API_KEY_2?: string;
   GROQ_API_KEY_3?: string;
   GROQ_API_KEY_4?: string;
   GROQ_API_KEYS?: string;
+  GROQ_VISION_MODEL?: string;
+  GROQ_TEXT_MODEL?: string;
+  VISION_DAILY_LIMIT?: string;
   FIREBASE_PROJECT_ID?: string;
   FIREBASE_CLIENT_EMAIL?: string;
   FIREBASE_PRIVATE_KEY?: string;
@@ -86,8 +113,9 @@ const DEFAULT_FIREBASE_PROJECT_ID = 'calendarai-f5cd0';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': '*',
+  'Access-Control-Expose-Headers': '*',
 };
 
 // Google JWKS public keys for Firebase Auth ID token verification
@@ -116,7 +144,7 @@ export async function withKvTimeout<T>(
   let timer: any;
   const timeoutPromise = new Promise<T>((resolve) => {
     timer = setTimeout(() => {
-      console.warn(`[KV Timeout] ${operationName} exceeded ${timeoutMs}ms ceiling; failing open to Tier 1.`);
+      console.warn('[KV Timeout]', operationName, 'exceeded ceiling; failing open to Tier 1.');
       resolve(fallback);
     }, timeoutMs);
   });
@@ -127,7 +155,7 @@ export async function withKvTimeout<T>(
     return result;
   } catch (err: any) {
     clearTimeout(timer);
-    console.warn(`[KV Error] ${operationName} encountered exception; failing open to Tier 1:`, err?.message || err);
+    console.warn('[KV Error]', operationName, 'encountered exception; failing open to Tier 1:', err?.message || err);
     return fallback;
   }
 }
@@ -242,7 +270,7 @@ export interface VerifiedToken {
   claims: Record<string, unknown>;
 }
 
-async function verifyFirebaseToken(
+export async function verifyFirebaseToken(
   authHeader: string | null,
   env: Env
 ): Promise<VerifiedToken> {
@@ -527,28 +555,162 @@ async function checkAndIncrementQuota(
   }
 }
 
-function normalizeEvents(value: unknown): unknown[] {
+const DAILY_VISION_QUOTA = 5;
+const localVisionUsageCache = new Map<string, number>();
+
+async function checkAndIncrementVisionQuota(
+  uid: string,
+  env: Env,
+  incrementUsage: boolean = false
+): Promise<{ allowed: boolean; used: number; remaining: number }> {
+  const today = getTodayIST();
+  const usageKey = `vision_${uid}_${today}`;
+  const maxQuota = Number(env.VISION_DAILY_LIMIT) || DAILY_VISION_QUOTA;
+
+  if (env.RATE_LIMIT_KV) {
+    try {
+      const current = Number(await env.RATE_LIMIT_KV.get(usageKey)) || 0;
+      if (current >= maxQuota) {
+        return { allowed: false, used: current, remaining: 0 };
+      }
+      if (incrementUsage) {
+        const next = current + 1;
+        await env.RATE_LIMIT_KV.put(usageKey, String(next), { expirationTtl: 86400 * 2 });
+        return { allowed: true, used: next, remaining: Math.max(0, maxQuota - next) };
+      }
+      return { allowed: true, used: current, remaining: Math.max(0, maxQuota - current) };
+    } catch {
+      // Fallback to local cache if KV is unavailable
+    }
+  }
+
+  const current = localVisionUsageCache.get(usageKey) || 0;
+  if (current >= maxQuota) {
+    return { allowed: false, used: current, remaining: 0 };
+  }
+  if (incrementUsage) {
+    const next = current + 1;
+    localVisionUsageCache.set(usageKey, next);
+    return { allowed: true, used: next, remaining: Math.max(0, maxQuota - next) };
+  }
+  return { allowed: true, used: current, remaining: Math.max(0, maxQuota - current) };
+}
+
+function parseFlexibleDate(val: unknown): string | null {
+  if (!val || typeof val !== 'string') return null;
+  const s = val.trim();
+  // Standard ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return !Number.isNaN(Date.parse(s)) ? s : null;
+  }
+  // ISO with timestamp (e.g. 2026-10-25T10:00:00Z)
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const datePart = s.slice(0, 10);
+    return !Number.isNaN(Date.parse(datePart)) ? datePart : null;
+  }
+  // DD-MM-YYYY or DD/MM/YYYY
+  const dmyMatch = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmyMatch) {
+    const [, d, m, y] = dmyMatch;
+    const iso = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    return !Number.isNaN(Date.parse(iso)) ? iso : null;
+  }
+  // YYYY/MM/DD
+  const ymdMatch = s.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+  if (ymdMatch) {
+    const [, y, m, d] = ymdMatch;
+    const iso = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    return !Number.isNaN(Date.parse(iso)) ? iso : null;
+  }
+  const parsed = Date.parse(s);
+  if (!Number.isNaN(parsed)) {
+    const dt = new Date(parsed);
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    if (y >= 2024 && y <= 2030) return `${y}-${m}-${d}`;
+  }
+  return null;
+}
+
+function normalizeEvents(value: unknown, referenceDateStr?: string): any[] {
   if (!Array.isArray(value)) return [];
+  const todayIST = getTodayIST();
+  const ref = referenceDateStr ? new Date(referenceDateStr) : new Date();
+  const currentYear = ref.getFullYear();
+
   return value.slice(0, MAX_EVENTS).flatMap((event) => {
     if (!event || typeof event !== 'object') return [];
     const item = event as Record<string, unknown>;
     const title = typeof item.title === 'string' ? item.title.trim().slice(0, 300) : '';
-    const confidence = typeof item.confidence_score === 'number' ? item.confidence_score : 0;
+
+    const hasStartDate = parseFlexibleDate(item.event_start_date);
+    const hasEndDate = parseFlexibleDate(item.event_end_date);
+    const hasDeadline = parseFlexibleDate(item.registration_deadline);
+
+    // Event must have a title and AT LEAST ONE valid date
+    if (!title || (!hasStartDate && !hasEndDate && !hasDeadline)) {
+      return []; // Reject phantom / dateless events
+    }
+
+    // Date sanity: Year validation (current year - 1 to current year + 2)
+    const validDates = [hasStartDate, hasEndDate, hasDeadline].filter(Boolean) as string[];
+
+    const yearSanity = validDates.every((d) => {
+      const yr = parseInt(d.slice(0, 4), 10);
+      return yr >= currentYear - 1 && yr <= currentYear + 2;
+    });
+
+    if (!yearSanity) {
+      return []; // Reject events with nonsense years (e.g. 1970 or 2045)
+    }
+
+    // Past event detection: flag if all specified dates have passed relative to today IST
+    const primaryDate = (hasStartDate || hasDeadline || hasEndDate) as string;
+    const isPast = primaryDate ? primaryDate < todayIST : false;
+
+    const confidence = typeof item.confidence_score === 'number' ? item.confidence_score : 0.85;
+    const allowedConfidence = ['high', 'medium', 'low'];
+    const extractionConfidence = allowedConfidence.includes(String(item.extraction_confidence))
+      ? item.extraction_confidence
+      : (confidence >= 0.8 ? 'high' : confidence >= 0.5 ? 'medium' : 'low');
+
+    const allowedLinkStatus = ['found', 'mentioned_in_comments', 'none'];
+    const linkStatus = allowedLinkStatus.includes(String(item.link_status))
+      ? item.link_status
+      : (item.registration_link ? 'found' : 'none');
+
+    const allowedLegibility = ['high', 'medium', 'low'];
+    const legibility = allowedLegibility.includes(String(item.legibility))
+      ? item.legibility
+      : 'high';
+
+    const requiresReview = isPast || extractionConfidence === 'low' || legibility === 'low';
+
     const allowedTypes = ['hackathon', 'ctf', 'meetup', 'workshop', 'deadline', 'other'];
     const allowedModes = ['online', 'offline', 'hybrid'];
-    if (!title || !isDate(item.event_start_date) || !isDate(item.event_end_date) || !isDate(item.registration_deadline)) return [];
+
     return [{
+      temp_id: `ext_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       title,
       type: allowedTypes.includes(String(item.type)) ? item.type : 'other',
-      event_start_date: item.event_start_date,
-      event_end_date: item.event_end_date,
-      registration_deadline: item.registration_deadline,
+      event_start_date: hasStartDate,
+      event_end_date: hasEndDate,
+      registration_deadline: hasDeadline,
       time: typeof item.time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(item.time) ? item.time : null,
       mode: allowedModes.includes(String(item.mode)) ? item.mode : 'online',
       location: typeof item.location === 'string' ? item.location.slice(0, 500) : null,
       registration_link: typeof item.registration_link === 'string' && /^https?:\/\//i.test(item.registration_link) ? item.registration_link.slice(0, 2000) : null,
       source_group: typeof item.source_group === 'string' ? item.source_group.slice(0, 300) : null,
+      raw_text: '',
       confidence_score: Math.max(0, Math.min(1, confidence)),
+      extraction_confidence: extractionConfidence,
+      link_status: linkStatus,
+      legibility,
+      is_past_event: isPast,
+      requires_review: requiresReview,
+      tags: [String(item.type || 'other'), String(item.mode || 'online')],
+      reminder_offsets: [4320, 1440, 0],
     }];
   });
 }
@@ -561,17 +723,20 @@ const JSON_SCHEMA = {
       event_start_date: 'YYYY-MM-DD or null',
       event_end_date: 'YYYY-MM-DD or null',
       registration_deadline: 'YYYY-MM-DD or null',
-      time: '12-hour format with AM/PM (e.g. "6:00 PM", "10:30 AM") or null if not mentioned',
+      time: 'HH:MM in 24h format (e.g. "18:00", "10:30") or null',
       mode: 'online | offline | hybrid',
       location: 'string or null',
       registration_link: 'string (URL) or null',
+      link_status: 'found | mentioned_in_comments | none',
       source_group: 'string or null',
       confidence_score: 'number (0.0 to 1.0)',
+      extraction_confidence: 'high | medium | low',
+      legibility: 'high | medium | low',
     },
   ],
 };
 
-function buildSystemPrompt(referenceDateStr?: string): string {
+function buildSystemPrompt(referenceDateStr?: string, isVision: boolean = false): string {
   const ref = referenceDateStr ? new Date(referenceDateStr) : new Date();
   const y = ref.getFullYear();
   const m = String(ref.getMonth() + 1).padStart(2, '0');
@@ -579,19 +744,32 @@ function buildSystemPrompt(referenceDateStr?: string): string {
   const todayStr = `${y}-${m}-${d}`;
   const dayOfWeek = ref.toLocaleDateString('en-US', { weekday: 'long' });
 
-  return `You are an expert event information extraction system. Your job is to parse informal, conversational, or forwarded WhatsApp messages and extract tech events, hackathons, CTFs, workshops, tech meetups, and registration deadlines.
+  const modeInstructions = isVision
+    ? `IMAGE & POSTER EXTRACTION RULES:
+1. POSTER, CHAT & SCREENSHOT PARSING: The image can be an event poster, flyer, brochure, OR a screenshot of a WhatsApp chat, message, notification, Instagram story, email, or social media post. Read ALL visible text thoroughly and extract any event mentioned!
+2. DATES & TIMES: Extract event dates, timings, and deadlines mentioned anywhere in the text or graphic. Convert any date mentioned (e.g. "October 28", "28th Oct", "Tomorrow", "Next Friday") into YYYY-MM-DD using the temporal context above.
+3. REGISTRATION LINKS & BIO MENTIONS: If the poster or caption says "link in bio", "link in comments", "link in description", or "check comment section", set "link_status": "mentioned_in_comments" and "registration_link": null. If an actual URL (e.g. bit.ly, unstop.com, devfolio.co, or direct link) is visible, set "link_status": "found" and include the URL. If no link is mentioned, set "link_status": "none".
+4. LEGIBILITY RATING: Set "legibility" to "high" (sharp, readable), "medium" (slightly stylized or blurred), or "low" (heavily pixelated or hard to decipher).
+5. MULTI-EVENT POSTERS: If the image lists a calendar or multiple distinct workshops/sessions, extract EACH as a separate event in the "events" array.`
+    : `TEXT MESSAGE EXTRACTION RULES:
+1. RELATIVE DATE RESOLUTION: Use the temporal context above to resolve relative dates. "This Saturday" means the upcoming Saturday relative to ${todayStr}.
+2. MULTI-EVENT SUPPORT: Extract all events if multiple are mentioned.`;
+
+  return `You are an expert event information extraction system. Your job is to extract tech events, hackathons, CTFs, workshops, tech meetups, and registration deadlines.
 
 CURRENT TEMPORAL CONTEXT:
 - TODAY'S DATE: ${todayStr} (${dayOfWeek})
+- CURRENT YEAR: ${y}
 
-CRITICAL RULES FOR EXTRACTION:
-1. RELATIVE DATE RESOLUTION: Use the temporal context above to resolve relative dates. "This Saturday" means the upcoming Saturday relative to ${todayStr}.
-2. REGISTRATION DEADLINE vs EVENT DATE: ALWAYS distinguish REGISTRATION DEADLINE from EVENT START DATE as separate fields.
-3. MULTI-EVENT SUPPORT: Extract all events if multiple are mentioned.
-4. MISSING DATES: If an event date or deadline cannot be determined, return null. NEVER guess.
-5. TYPE CLASSIFICATION: "hackathon" | "ctf" | "meetup" | "workshop" | "deadline" | "other"
-6. DELIVERY MODE: "online" | "offline" | "hybrid"
-7. FORMAT: Return strictly a valid JSON object matching the schema.`;
+${modeInstructions}
+
+CRITICAL RULES FOR ALL EXTRACTIONS:
+1. REGISTRATION DEADLINE vs EVENT START DATE: ALWAYS distinguish REGISTRATION DEADLINE from EVENT START DATE as separate fields.
+2. MISSING DATES: If a date cannot be determined from the source, return null. NEVER guess or invent dates.
+3. TYPE CLASSIFICATION: "hackathon" | "ctf" | "meetup" | "workshop" | "deadline" | "other"
+4. DELIVERY MODE: "online" | "offline" | "hybrid"
+5. CONFIDENCE RATING: Set "extraction_confidence" to "high" (unambiguous dates & title), "medium" (partially inferred), or "low" (uncertain/ambiguous).
+6. ZERO REASONING / ZERO THINKING TAGS: Do NOT output any thinking, reasoning, explanation, or <think> tags. Return ONLY the strict JSON object.`;
 }
 
 export default {
@@ -622,7 +800,7 @@ export default {
 
     // 2. Health check endpoint
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
-      return jsonResponse({ status: 'ok', service: 'Vanko AI Worker', version: '2.0.0' }, 200);
+      return jsonResponse({ status: 'ok', service: 'Vanko Backend Service', version: '2.0.0' }, 200);
     }
 
     // 2b. Models check endpoint
@@ -630,7 +808,7 @@ export default {
       try {
         const apiKey = getActiveGroqKeys(env)[0];
         if (!apiKey) {
-          return jsonResponse({ error: 'No Groq API keys configured' }, 500);
+          return jsonResponse({ error: 'Extraction service not configured' }, 500);
         }
         const res = await fetch('https://api.groq.com/openai/v1/models', {
           headers: { Authorization: `Bearer ${apiKey}` },
@@ -639,6 +817,374 @@ export default {
         return jsonResponse(data, res.status);
       } catch (err: any) {
         return jsonResponse({ error: err.message }, 500);
+      }
+    }
+
+    // 2c-1. OAuth 2.1 RFC 9728: Protected Resource Metadata
+    if (request.method === 'GET' && url.pathname === '/.well-known/oauth-protected-resource') {
+      return handleOAuthProtectedResource(url.origin);
+    }
+
+    // 2c-2. OAuth 2.1 RFC 8414: Authorization Server Metadata / OpenID Discovery
+    if (
+      request.method === 'GET' &&
+      (url.pathname === '/.well-known/oauth-authorization-server' ||
+        url.pathname === '/.well-known/openid-configuration')
+    ) {
+      return handleOAuthAuthorizationServer(url.origin);
+    }
+
+    // 2c-3. OAuth 2.1 RFC 7591: Dynamic Client Registration
+    if (request.method === 'POST' && url.pathname === '/oauth/register') {
+      return handleOAuthRegister(request, url.origin);
+    }
+
+    // 2c-4. OAuth 2.1: Authorization Endpoint (GET displays login form, POST validates and redirects)
+    if (url.pathname === '/oauth/authorize') {
+      if (request.method === 'GET') {
+        return renderOAuthAuthorizePage({
+          clientId: url.searchParams.get('client_id') || '',
+          redirectUri: url.searchParams.get('redirect_uri') || '',
+          state: url.searchParams.get('state') || '',
+          codeChallenge: url.searchParams.get('code_challenge') || '',
+          codeChallengeMethod: url.searchParams.get('code_challenge_method') || 'S256',
+          scope: url.searchParams.get('scope') || 'calendar.read calendar.write',
+        });
+      }
+      if (request.method === 'POST') {
+        const firebaseWebKey = env.FIREBASE_WEB_API_KEY || 'AIzaSyD41L6CdPjUdXc82DW8119-GyVO7gXYHSw';
+        return handleOAuthAuthorizePost(
+          request,
+          env.FIREBASE_PRIVATE_KEY || 'vanko_secret_fallback',
+          firebaseWebKey,
+          verifyPermanentMcpKey
+        );
+      }
+    }
+
+    // 2c-5. OAuth 2.1: Token Endpoint (Authorization Code exchange with PKCE & Refresh Tokens)
+    if (request.method === 'POST' && url.pathname === '/oauth/token') {
+      return handleOAuthToken(request, env.FIREBASE_PRIVATE_KEY || 'vanko_secret_fallback');
+    }
+
+    // 2c-6. OpenAPI schema for ChatGPT Custom GPT Actions
+    if (request.method === 'GET' && url.pathname === '/api/openapi.json') {
+      return jsonResponse(getOpenApiSchema(url.origin), 200);
+    }
+
+    // 2d. Generate Permanent, Non-Expiring MCP Access Key for ChatGPT & Claude
+    if ((request.method === 'GET' || request.method === 'POST') && url.pathname === '/api/mcp/permanent-key') {
+      try {
+        const user = await verifyFirebaseToken(request.headers.get('Authorization'), env);
+        const permanentKey = await signPermanentMcpKey(
+          user.uid,
+          user.email,
+          env.FIREBASE_PRIVATE_KEY || 'vanko_secret_fallback'
+        );
+        const mcpUrl = `${url.origin}/api/mcp?key=${permanentKey}`;
+        return jsonResponse(
+          {
+            success: true,
+            key: permanentKey,
+            mcpUrl,
+            expires: 'never',
+          },
+          200
+        );
+      } catch (err: any) {
+        return jsonResponse(
+          { error: err?.message || 'UNAUTHORIZED' },
+          err?.message === 'MISSING_TOKEN' || err?.message === 'INVALID_TOKEN' ? 401 : 500
+        );
+      }
+    }
+
+    // 2e. MCP Server-Sent Events (SSE) Stream for Claude Web & ChatGPT MCP clients
+    if (
+      request.method === 'GET' &&
+      (url.pathname === '/sse' ||
+        url.pathname === '/api/mcp/sse' ||
+        url.pathname === '/api/mcp' ||
+        request.headers.get('accept')?.includes('text/event-stream'))
+    ) {
+      const token =
+        url.searchParams.get('key') ||
+        url.searchParams.get('token') ||
+        (request.headers.get('Authorization')?.startsWith('Bearer ')
+          ? request.headers.get('Authorization')!.substring(7).trim()
+          : undefined);
+
+      if (!token) {
+        return new Response(
+          JSON.stringify({
+            error: 'unauthorized',
+            message: 'Authentication required. Please authenticate via OAuth or provide your Vanko access key.',
+          }),
+          {
+            status: 401,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+              'WWW-Authenticate': `Bearer resource_metadata="${url.origin}/.well-known/oauth-protected-resource"`,
+            },
+          }
+        );
+      }
+
+      // Verify token authenticity before opening SSE stream
+      let sseUid: string | null = null;
+      if (token.startsWith('vnk_oauth_')) {
+        const verified = await verifyOAuthAccessToken(
+          token,
+          env.FIREBASE_PRIVATE_KEY || 'vanko_secret_fallback'
+        );
+        if (verified) sseUid = verified.uid;
+      } else if (token.startsWith('vnk_live_')) {
+        const verified = await verifyPermanentMcpKey(
+          token,
+          env.FIREBASE_PRIVATE_KEY || 'vanko_secret_fallback'
+        );
+        if (verified) sseUid = verified.uid;
+      } else {
+        try {
+          const user = await verifyFirebaseToken(`Bearer ${token}`, env);
+          sseUid = user.uid;
+        } catch {
+          // Invalid Firebase token
+        }
+      }
+
+      if (!sseUid) {
+        return new Response(
+          JSON.stringify({
+            error: 'unauthorized',
+            message: 'Invalid or expired authentication credentials.',
+          }),
+          {
+            status: 401,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+              'WWW-Authenticate': `Bearer resource_metadata="${url.origin}/.well-known/oauth-protected-resource"`,
+            },
+          }
+        );
+      }
+
+      return handleMcpSseConnection(request, url, token);
+    }
+
+    // 2f. Standard MCP JSON-RPC 2.0 Endpoint over HTTP POST
+    // Accepts /api/mcp, /sse, /message, or /api/openapi.json
+    if (
+      request.method === 'POST' &&
+      (url.pathname === '/api/mcp' ||
+        url.pathname === '/sse' ||
+        url.pathname === '/message' ||
+        url.pathname === '/api/openapi.json')
+    ) {
+      try {
+        let rawToken = '';
+        const authHeader = request.headers.get('Authorization');
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          rawToken = authHeader.substring(7).trim();
+        } else if (url.searchParams.has('key')) {
+          rawToken = url.searchParams.get('key')!.trim();
+        } else if (url.searchParams.has('token')) {
+          rawToken = url.searchParams.get('token')!.trim();
+        }
+
+        let uid: string | null = null;
+        if (rawToken) {
+          if (rawToken.startsWith('vnk_oauth_')) {
+            const verified = await verifyOAuthAccessToken(
+              rawToken,
+              env.FIREBASE_PRIVATE_KEY || 'vanko_secret_fallback'
+            );
+            if (verified) {
+              uid = verified.uid;
+            }
+          } else if (rawToken.startsWith('vnk_live_')) {
+            const verified = await verifyPermanentMcpKey(
+              rawToken,
+              env.FIREBASE_PRIVATE_KEY || 'vanko_secret_fallback'
+            );
+            if (verified) {
+              uid = verified.uid;
+            }
+          } else {
+            try {
+              const user = await verifyFirebaseToken(`Bearer ${rawToken}`, env);
+              uid = user.uid;
+            } catch {
+              // Token verification optional for initialize & tools/list
+            }
+          }
+        }
+
+        const body = (await request.json()) as any;
+
+        // Strict Enforcement: If client calls tools/call without valid authentication, reject immediately with 401
+        if (!uid && body?.method === 'tools/call') {
+          return new Response(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: body?.id || null,
+              error: {
+                code: -32001,
+                message: 'Unauthorized: Authentication required. Please connect your Vanko account via OAuth.',
+              },
+            }),
+            {
+              status: 401,
+              headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'WWW-Authenticate': `Bearer resource_metadata="${url.origin}/.well-known/oauth-protected-resource"`,
+              },
+            }
+          );
+        }
+
+        const response = await handleMcpJsonRpc(env, uid, body, rawToken || undefined);
+        return jsonResponse(response, 200);
+      } catch (err: any) {
+        return jsonResponse(
+          { jsonrpc: '2.0', id: null, error: { code: -32603, message: err?.message || 'Internal error' } },
+          500
+        );
+      }
+    }
+
+    // 2g. MCP REST Endpoints (for Claude Web, ChatGPT Custom GPT Actions, and local MCP Client)
+    if (url.pathname.startsWith('/api/mcp/')) {
+      try {
+        let rawToken = '';
+        const authHeader = request.headers.get('Authorization');
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          rawToken = authHeader.substring(7).trim();
+        } else if (url.searchParams.has('key')) {
+          rawToken = url.searchParams.get('key')!.trim();
+        } else if (url.searchParams.has('token')) {
+          rawToken = url.searchParams.get('token')!.trim();
+        }
+
+        let user: { uid: string; email?: string; isAdmin?: boolean; role?: 'admin' | 'student'; college?: string };
+        if (rawToken.startsWith('vnk_oauth_')) {
+          const verified = await verifyOAuthAccessToken(
+            rawToken,
+            env.FIREBASE_PRIVATE_KEY || 'vanko_secret_fallback'
+          );
+          if (!verified) {
+            return new Response(JSON.stringify({ error: 'INVALID_OAUTH_TOKEN' }), {
+              status: 401,
+              headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'WWW-Authenticate': `Bearer resource_metadata="${url.origin}/.well-known/oauth-protected-resource"`,
+              },
+            });
+          }
+          user = { uid: verified.uid, email: verified.email, isAdmin: false, role: 'student', college: 'SIES_GST' };
+        } else if (rawToken.startsWith('vnk_live_')) {
+          const verified = await verifyPermanentMcpKey(
+            rawToken,
+            env.FIREBASE_PRIVATE_KEY || 'vanko_secret_fallback'
+          );
+          if (!verified) {
+            return new Response(JSON.stringify({ error: 'INVALID_PERMANENT_KEY' }), {
+              status: 401,
+              headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'WWW-Authenticate': `Bearer resource_metadata="${url.origin}/.well-known/oauth-protected-resource"`,
+              },
+            });
+          }
+          user = { uid: verified.uid, email: verified.email, isAdmin: false, role: 'student', college: 'SIES_GST' };
+        } else {
+          user = await verifyFirebaseToken(`Bearer ${rawToken}`, env);
+        }
+
+        // GET /api/mcp/events/search?q=...
+        if (request.method === 'GET' && url.pathname === '/api/mcp/events/search') {
+          const q = (url.searchParams.get('q') || '').toLowerCase();
+          const allEvents = await fetchAllUserEvents(env, user.uid, rawToken);
+          const results = allEvents.filter(
+            (e) =>
+              e.title.toLowerCase().includes(q) ||
+              (e.location && e.location.toLowerCase().includes(q)) ||
+              (e.raw_text && e.raw_text.toLowerCase().includes(q)) ||
+              (e.tags && e.tags.some((t) => t.toLowerCase().includes(q)))
+          );
+          return jsonResponse({ results }, 200);
+        }
+
+        // GET /api/mcp/conflicts?date=...
+        if (request.method === 'GET' && url.pathname === '/api/mcp/conflicts') {
+          const date = url.searchParams.get('date') || undefined;
+          const allEvents = await fetchAllUserEvents(env, user.uid, rawToken);
+          const report = checkConflicts(allEvents, date);
+          return jsonResponse(report, 200);
+        }
+
+        // GET /api/mcp/deadlines?days=7&include_registered=false
+        if (request.method === 'GET' && url.pathname === '/api/mcp/deadlines') {
+          const days = parseInt(url.searchParams.get('days') || '7', 10);
+          const incReg = url.searchParams.get('include_registered') === 'true';
+          const allEvents = await fetchAllUserEvents(env, user.uid, rawToken);
+          const deadlines = getDeadlines(allEvents, days, incReg);
+          return jsonResponse({ deadlines }, 200);
+        }
+
+        // POST /api/mcp/events/:id/submit
+        const submitMatch = url.pathname.match(/^\/api\/mcp\/events\/([^/]+)\/submit$/);
+        if (request.method === 'POST' && submitMatch) {
+          const eventId = decodeURIComponent(submitMatch[1]);
+          const updated = await updateFirestoreEventStatus(env, user.uid, eventId, 'registered', rawToken);
+          return jsonResponse({ event: updated, message: 'Event marked as submitted and alarms disarmed.' }, 200);
+        }
+
+        // GET /api/mcp/events/:id
+        const singleMatch = url.pathname.match(/^\/api\/mcp\/events\/([^/]+)$/);
+        if (request.method === 'GET' && singleMatch) {
+          const eventId = decodeURIComponent(singleMatch[1]);
+          const allEvents = await fetchAllUserEvents(env, user.uid, rawToken);
+          const event = allEvents.find((e) => e.id === eventId);
+          if (!event) return jsonResponse({ error: 'NOT_FOUND', message: 'Event not found' }, 404);
+          return jsonResponse({ event }, 200);
+        }
+
+        // GET /api/mcp/events
+        if (request.method === 'GET' && url.pathname === '/api/mcp/events') {
+          const allEvents = await fetchAllUserEvents(env, user.uid, rawToken);
+          const params = {
+            time_filter: url.searchParams.get('time_filter') || undefined,
+            type: url.searchParams.get('type') || undefined,
+            status: url.searchParams.get('status') || undefined,
+            has_alarm: url.searchParams.has('has_alarm') ? url.searchParams.get('has_alarm') === 'true' : undefined,
+            limit: url.searchParams.has('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 20,
+          };
+          const events = filterEvents(allEvents, params);
+          return jsonResponse({ events, total: events.length }, 200);
+        }
+
+        // POST /api/mcp/events
+        if (request.method === 'POST' && url.pathname === '/api/mcp/events') {
+          const body = (await request.json()) as any;
+          if (!body || !body.title) {
+            return jsonResponse({ error: 'BAD_REQUEST', message: 'Event title is required.' }, 400);
+          }
+          const created = await createFirestoreEvent(env, user.uid, body, rawToken);
+          return jsonResponse({ event: created, message: 'Event successfully created.' }, 201);
+        }
+
+        return jsonResponse({ error: 'NOT_FOUND', message: 'Endpoint not found' }, 404);
+      } catch (err: any) {
+        if (err.message === 'MISSING_TOKEN' || err.message === 'INVALID_TOKEN') {
+          return jsonResponse({ error: 'UNAUTHORIZED', message: 'Authentication required.' }, 401);
+        }
+        return jsonResponse({ error: 'INTERNAL_ERROR', message: err.message }, 500);
       }
     }
 
@@ -682,7 +1228,7 @@ export default {
           return jsonResponse(
             {
               error: 'UNAUTHORIZED',
-              message: 'Valid authentication session required to use AI extraction.',
+              message: 'Valid authentication session required to scan announcements.',
             },
             401
           );
@@ -696,7 +1242,7 @@ export default {
           return jsonResponse(
             {
               error: 'QUOTA_EXCEEDED',
-              message: "You've reached your limit of 3 extractions for today. New extractions unlock tomorrow.",
+              message: "Daily schedule scan limit reached. Your allowance refreshes tomorrow at midnight.",
               quota: {
                 daily_quota: DAILY_STUDENT_QUOTA,
                 used_today: quota.used,
@@ -708,38 +1254,98 @@ export default {
           );
         }
 
+        const MAX_PAYLOAD_LENGTH = 4_500_000; // Allow up to 4.5MB for base64 image payloads
         const contentLength = Number(request.headers.get('Content-Length') || 0);
-        if (contentLength > MAX_INPUT_LENGTH + 500) return jsonResponse({ error: 'Request is too large.' }, 413);
+        if (contentLength > MAX_PAYLOAD_LENGTH) {
+          return jsonResponse({ error: 'Request is too large. Image payloads must be under 3.5MB.' }, 413);
+        }
 
         const apiKeys = getActiveGroqKeys(env);
         if (apiKeys.length === 0) {
-          return jsonResponse({ error: 'Extraction service is not configured.' }, 500);
+          return jsonResponse({ error: 'Extraction service is temporarily unavailable.' }, 500);
         }
 
-        const body = (await request.json()) as { text?: string; referenceDate?: string };
-        const rawText = body.text?.trim();
-        if (rawText && rawText.length > MAX_INPUT_LENGTH) return jsonResponse({ error: 'Text is too large.' }, 413);
+        const body = (await request.json()) as {
+          text?: string;
+          imageBase64?: string;
+          mimeType?: string;
+          referenceDate?: string;
+        };
 
-        if (!rawText) {
+        const rawText = body.text?.trim();
+        const hasImage = Boolean(body.imageBase64 && body.imageBase64.length > 50);
+
+        if (rawText && rawText.length > MAX_INPUT_LENGTH) {
+          return jsonResponse({ error: 'Text input exceeds maximum allowed length.' }, 413);
+        }
+
+        if (!rawText && !hasImage) {
           return jsonResponse({ events: [], extracted_at: new Date().toISOString() }, 200);
         }
 
+        const isVisionRequest = hasImage;
+        const tierUsed = isVisionRequest ? 'tier2_vision' : 'tier1_text';
+
+        // Rate limiting per user on Tier 2 vision calls (5 calls/day for students)
+        if (isVisionRequest && !isAdmin) {
+          const visionQuota = await checkAndIncrementVisionQuota(user.uid, env, true);
+          if (!visionQuota.allowed) {
+            return jsonResponse(
+              {
+                error: 'VISION_QUOTA_EXCEEDED',
+                message: "Daily image scan limit reached. Please paste the announcement text or try again tomorrow.",
+              },
+              429
+            );
+          }
+        }
+
         const systemPrompt =
-          buildSystemPrompt(body.referenceDate) +
+          buildSystemPrompt(body.referenceDate, isVisionRequest) +
           `\n\nOUTPUT FORMAT:\nYou MUST return ONLY a JSON object containing an "events" array conforming strictly to:\n${JSON.stringify(
             JSON_SCHEMA,
             null,
             2
           )}`;
 
-        const CANDIDATE_MODELS = [
-          'openai/gpt-oss-120b',
-          'openai/gpt-oss-20b',
-          'qwen/qwen3.8-27b',
-          'qwen/qwen3.6-27b',
-          'groq/compound',
-          'llama-3.3-70b-versatile',
+        const userMessages: any[] = [
+          { role: 'system', content: systemPrompt },
         ];
+
+        if (isVisionRequest) {
+          const mime = body.mimeType || 'image/jpeg';
+          userMessages.push({
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text:
+                  'Extract all tech events, hackathons, CTFs, workshops, or deadlines from this poster, screenshot, or announcement image.' +
+                  (rawText ? `\nAccompanying caption/text:\n"""\n${rawText}\n"""` : ''),
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mime};base64,${body.imageBase64}`,
+                },
+              },
+            ],
+          });
+        } else {
+          userMessages.push({
+            role: 'user',
+            content: `Extract all tech events, hackathons, CTFs, workshops, or deadlines from this WhatsApp message:\n\n"""\n${rawText}\n"""`,
+          });
+        }
+
+        const CANDIDATE_MODELS = isVisionRequest
+          ? [env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b']
+          : [
+              env.GROQ_TEXT_MODEL || 'openai/gpt-oss-120b',
+              'openai/gpt-oss-20b',
+              'qwen/qwen3.8-27b',
+              'llama-3.3-70b-versatile',
+            ];
 
         let content: string | null = null;
         let lastError = '';
@@ -748,24 +1354,23 @@ export default {
         for (const currentApiKey of apiKeys) {
           for (const candidateModel of CANDIDATE_MODELS) {
             try {
+              const groqPayload: any = {
+                model: candidateModel,
+                messages: userMessages,
+                response_format: { type: 'json_object' },
+                temperature: 0.1,
+              };
+
+              // Explicitly disable reasoning/thinking tokens to minimize latency
+              groqPayload.reasoning_format = 'hidden';
+
               const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                   Authorization: `Bearer ${currentApiKey}`,
                 },
-                body: JSON.stringify({
-                  model: candidateModel,
-                  messages: [
-                    { role: 'system', content: systemPrompt },
-                    {
-                      role: 'user',
-                      content: `Extract all tech events, hackathons, CTFs, workshops, or deadlines from this WhatsApp message:\n\n"""\n${rawText}\n"""`,
-                    },
-                  ],
-                  response_format: { type: 'json_object' },
-                  temperature: 0.1,
-                }),
+                body: JSON.stringify(groqPayload),
               });
 
               if (groqResponse.ok) {
@@ -773,9 +1378,10 @@ export default {
                 content = groqData?.choices?.[0]?.message?.content;
                 if (content) break;
               } else if (groqResponse.status === 429) {
-                // Key rate-limited / quota exhausted: put key on 60-second cooldown and switch to next backup key
+                const errDetail = await groqResponse.text().catch(() => '');
+                console.warn(`Groq 429 rate limit on key:`, errDetail);
                 groqKeyCooldownMap.set(currentApiKey, Date.now() + 60_000);
-                lastError = `Key rate-limited (429)`;
+                lastError = `Groq rate-limited (429): ${errDetail.slice(0, 150)}`;
                 break; // Break out of candidate models to cascade immediately to next key
               } else if (groqResponse.status === 401) {
                 // Key invalid or unauthorized: put key on 1-hour cooldown and switch to next backup key
@@ -783,7 +1389,8 @@ export default {
                 lastError = `Key unauthorized (401)`;
                 break; // Break out of candidate models to cascade immediately to next key
               } else {
-                lastError = `[${candidateModel}] Status ${groqResponse.status}`;
+                const errDetail = await groqResponse.text().catch(() => '');
+                lastError = `[${candidateModel}] Status ${groqResponse.status}: ${errDetail.slice(0, 200)}`;
               }
             } catch (modelErr: any) {
               lastError = `[${candidateModel}] ${modelErr?.message || 'Fetch failed'}`;
@@ -794,7 +1401,13 @@ export default {
         }
 
         if (!content) {
-          return jsonResponse({ error: `Groq upstream error: ${lastError || 'Empty response'}` }, 502);
+          return jsonResponse(
+            {
+              error: 'EXTRACTION_FAILED',
+              message: 'Unable to analyze the announcement. Please try again in a moment or enter the details manually.',
+            },
+            502
+          );
         }
 
         let parsedJson: any;
@@ -807,7 +1420,8 @@ export default {
 
         return jsonResponse(
           {
-            events: normalizeEvents(parsedJson.events),
+            events: normalizeEvents(parsedJson?.events, body.referenceDate),
+            tier_used: tierUsed,
             extracted_at: new Date().toISOString(),
             quota: {
               daily_quota: DAILY_STUDENT_QUOTA,
@@ -820,6 +1434,144 @@ export default {
         );
       } catch (err: any) {
         return jsonResponse({ error: 'Internal Server Error' }, 500);
+      }
+    }
+
+    // 4b. Benchmark & Evaluation Endpoint (Gated by X-Eval-Key)
+    if (request.method === 'POST' && url.pathname === '/api/eval/extract') {
+      try {
+        const evalHeader = request.headers.get('X-Eval-Key');
+        if (evalHeader !== 'vanko-benchmark-eval-2026') {
+          return jsonResponse({ error: 'FORBIDDEN', message: 'Valid evaluation key required.' }, 403);
+        }
+
+        const apiKeys = getActiveGroqKeys(env);
+        if (apiKeys.length === 0) {
+          return jsonResponse({ error: 'Extraction service is not configured.' }, 500);
+        }
+
+        const body = (await request.json()) as {
+          text?: string;
+          imageBase64?: string;
+          mimeType?: string;
+          referenceDate?: string;
+          disableReasoningFormat?: boolean;
+        };
+
+        const isVisionRequest = Boolean(body.imageBase64 && body.imageBase64.length > 50);
+        const systemPrompt =
+          buildSystemPrompt(body.referenceDate, isVisionRequest) +
+          `\n\nOUTPUT FORMAT:\nYou MUST return ONLY a JSON object containing an "events" array conforming strictly to:\n${JSON.stringify(
+            JSON_SCHEMA,
+            null,
+            2
+          )}`;
+
+        const userMessages: any[] = [{ role: 'system', content: systemPrompt }];
+
+        if (isVisionRequest) {
+          userMessages.push({
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text:
+                  'Extract all tech events, hackathons, CTFs, workshops, or deadlines from this poster, screenshot, or announcement image.' +
+                  (body.text ? `\nAccompanying caption/text:\n"""\n${body.text}\n"""` : ''),
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${body.mimeType || 'image/jpeg'};base64,${body.imageBase64}`,
+                },
+              },
+            ],
+          });
+        } else {
+          userMessages.push({
+            role: 'user',
+            content: `Extract all tech events, hackathons, CTFs, workshops, or deadlines from this text:\n\n"""\n${body.text}\n"""`,
+          });
+        }
+
+        const candidateModel = isVisionRequest
+          ? (env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b')
+          : (env.GROQ_TEXT_MODEL || 'openai/gpt-oss-120b');
+
+        const startTime = Date.now();
+        const groqPayload: any = {
+          model: candidateModel,
+          messages: userMessages,
+          response_format: { type: 'json_object' },
+          temperature: 0.1,
+        };
+
+        if (!body.disableReasoningFormat) {
+          groqPayload.reasoning_format = 'hidden';
+        }
+
+        let groqResponse: Response | null = null;
+        let lastError = '';
+        for (const currentApiKey of apiKeys) {
+          try {
+            groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${currentApiKey}`,
+              },
+              body: JSON.stringify(groqPayload),
+            });
+            if (groqResponse.ok) break;
+            const errTxt = await groqResponse.text().catch(() => '');
+            lastError = `Status ${groqResponse.status}: ${errTxt.slice(0, 200)}`;
+          } catch (fetchErr: any) {
+            lastError = fetchErr.message;
+          }
+        }
+
+        const latencyMs = Date.now() - startTime;
+
+        if (!groqResponse || !groqResponse.ok) {
+          return jsonResponse({ error: 'UPSTREAM_GROQ_ERROR', message: lastError, latency_ms: latencyMs }, 502);
+        }
+
+        const groqData = (await groqResponse.json()) as any;
+        const rawContent = groqData?.choices?.[0]?.message?.content || '';
+        const reasoningContent = groqData?.choices?.[0]?.message?.reasoning || '';
+        const thinkingDetected = rawContent.includes('<think>') || Boolean(reasoningContent);
+
+        let parsedJson: any = null;
+        let jsonParseError: string | null = null;
+        try {
+          parsedJson = JSON.parse(rawContent);
+        } catch (e) {
+          try {
+            const cleaned = rawContent.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
+            parsedJson = JSON.parse(cleaned);
+          } catch (err2: any) {
+            jsonParseError = err2.message;
+          }
+        }
+
+        const events = parsedJson?.events ? normalizeEvents(parsedJson.events, body.referenceDate) : [];
+
+        return jsonResponse(
+          {
+            model_evaluated: candidateModel,
+            latency_ms: latencyMs,
+            thinking_tokens_detected: thinkingDetected,
+            reasoning_length: reasoningContent ? reasoningContent.length : 0,
+            json_parsed_successfully: Boolean(parsedJson),
+            json_parse_error: jsonParseError,
+            events_extracted_count: events.length,
+            events,
+            raw_content_preview: rawContent.slice(0, 500),
+          },
+          200
+        );
+      } catch (evalErr: any) {
+        return jsonResponse({ error: 'EVAL_INTERNAL_ERROR', message: evalErr.message }, 500);
       }
     }
 
@@ -946,6 +1698,7 @@ export default {
             type: 'community_event',
             eventId: body.eventId,
             college: adminCollege,
+            url: `/event/${body.eventId}`,
           },
         }));
 
@@ -1128,6 +1881,7 @@ export default {
               type: 'event_reminder',
               eventId: body.eventId,
               reminderType: body.reminderType || 'reminder',
+              url: `/event/${body.eventId}`,
             },
           }));
 
@@ -1215,8 +1969,20 @@ export default {
     }
 
     // 7. Privacy Policy Public Web Page
-    if (request.method === 'GET' && url.pathname === '/privacy-policy') {
+    if (request.method === 'GET' && (url.pathname === '/privacy' || url.pathname === '/privacy-policy')) {
       return new Response(renderPrivacyPolicyHtml(), {
+        status: 200,
+        headers: {
+          ...CORS_HEADERS,
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    }
+
+    // 7b. Terms of Service Public Web Page
+    if (request.method === 'GET' && (url.pathname === '/terms' || url.pathname === '/terms-of-service')) {
+      return new Response(renderTermsOfServiceHtml(), {
         status: 200,
         headers: {
           ...CORS_HEADERS,
@@ -1310,7 +2076,7 @@ export default {
           uid: { stringValue: user.uid },
           email: { stringValue: user.email || 'anonymous' },
           platform: { stringValue: body.platform || 'unknown' },
-          appVersion: { stringValue: body.appVersion || '1.0.0' },
+          appVersion: { stringValue: body.appVersion || '1.0.3' },
           createdAt: { stringValue: new Date().toISOString() },
         };
 
@@ -1367,7 +2133,7 @@ export default {
 
         if (body.message) {
           console.error(
-            `[AppCrash] v${body.version || '1.0.2'} (${body.platform || 'unknown'}): ${body.message}\n` +
+            `[AppCrash] v${body.version || '1.0.3'} (${body.platform || 'unknown'}): ${body.message}\n` +
             `Stack: ${body.stack?.slice(0, 300) || 'none'}`
           );
         }

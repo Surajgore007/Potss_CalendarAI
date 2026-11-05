@@ -22,8 +22,10 @@ export async function extractEventsFromText(
   rawText: string,
   options?: ExtractEventsOptions
 ): Promise<ExtractResponse> {
-  const trimmedText = rawText.trim();
-  if (!trimmedText) {
+  const trimmedText = rawText ? rawText.trim() : '';
+  const hasImage = Boolean(options?.imageBase64 && options.imageBase64.length > 50);
+
+  if (!trimmedText && !hasImage) {
     return {
       events: [],
       raw_input: rawText,
@@ -39,7 +41,7 @@ export async function extractEventsFromText(
 
   if (!workerUrl) {
     throw new AIClientError(
-      'AI Extraction service URL is not configured. Set EXPO_PUBLIC_WORKER_URL.',
+      'The extraction service is currently unavailable. Please try again shortly.',
       500,
       'CONFIG_MISSING'
     );
@@ -69,32 +71,42 @@ export async function extractEventsFromText(
 
   const referenceDate = options?.referenceDate || new Date();
 
-  // Hard 20-second timeout via AbortController
+  // Hard 25-second timeout via AbortController for vision/text extractions
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20_000);
+  const timeoutId = setTimeout(() => controller.abort(), 25_000);
+
+  const requestBody: Record<string, any> = {
+    referenceDate: referenceDate.toISOString(),
+  };
+
+  if (trimmedText) {
+    requestBody.text = trimmedText;
+  }
+
+  if (hasImage) {
+    requestBody.imageBase64 = options?.imageBase64;
+    requestBody.mimeType = options?.mimeType || 'image/jpeg';
+  }
 
   let res: Response;
   try {
     res = await fetch(endpoint, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        text: trimmedText,
-        referenceDate: referenceDate.toISOString(),
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
       throw new AIClientError(
-        'AI Extraction request timed out after 20 seconds. Please try with shorter text.',
+        'The request timed out. Please check your connection and try again.',
         408,
         'TIMEOUT'
       );
     }
     throw new AIClientError(
-      `Network error connecting to extraction worker: ${err.message || 'Connection failed'}`,
+      'Unable to connect to the server. Please check your internet connection.',
       0,
       'NETWORK_ERROR'
     );
@@ -113,7 +125,7 @@ export async function extractEventsFromText(
 
     if (res.status === 401) {
       throw new AIClientError(
-        errorDetail || 'Your session expired. Please sign in again to use AI extraction.',
+        errorDetail || 'Your session has expired. Please sign in again to continue.',
         401,
         'UNAUTHORIZED'
       );
@@ -121,7 +133,7 @@ export async function extractEventsFromText(
 
     if (res.status === 429) {
       throw new AIClientError(
-        errorDetail || "You've reached your limit of 3 extractions for today. New extractions unlock tomorrow.",
+        errorDetail || 'Daily schedule scan limit reached. Your allowance refreshes tomorrow at midnight.',
         429,
         'QUOTA_EXCEEDED'
       );
@@ -129,14 +141,14 @@ export async function extractEventsFromText(
 
     if (res.status >= 500) {
       throw new AIClientError(
-        errorDetail || 'The AI extraction service is temporarily unavailable. Please try again shortly.',
+        errorDetail || 'The service is temporarily unavailable. Please try again shortly.',
         res.status,
         'UPSTREAM_ERROR'
       );
     }
 
     throw new AIClientError(
-      errorDetail || `Extraction request failed with status ${res.status}`,
+      errorDetail || `Unable to complete request (${res.status}). Please try again shortly.`,
       res.status,
       'REQUEST_FAILED'
     );
@@ -147,39 +159,82 @@ export async function extractEventsFromText(
     data = await res.json();
   } catch (jsonErr) {
     throw new AIClientError(
-      'Received invalid JSON response from extraction worker.',
+      'Unable to process event details. Please verify the information and try again.',
       502,
       'INVALID_RESPONSE'
     );
   }
 
   const rawEvents = Array.isArray(data?.events) ? data.events : [];
-  const normalizedEvents: ExtractedEvent[] = rawEvents.map((rawEvent: any, index: number) => ({
-    temp_id: `ext_${Date.now()}_${index}`,
-    title: rawEvent.title?.trim() || 'Untitled Event',
-    type: ['hackathon', 'ctf', 'meetup', 'workshop', 'deadline', 'other'].includes(rawEvent.type?.toLowerCase())
-      ? rawEvent.type.toLowerCase()
-      : 'other',
-    event_start_date: isValidDateFormat(rawEvent.event_start_date) ? rawEvent.event_start_date : null,
-    event_end_date: isValidDateFormat(rawEvent.event_end_date) ? rawEvent.event_end_date : null,
-    registration_deadline: isValidDateFormat(rawEvent.registration_deadline) ? rawEvent.registration_deadline : null,
-    time: rawEvent.time?.trim() || null,
-    mode: ['online', 'offline', 'hybrid'].includes(rawEvent.mode?.toLowerCase()) ? rawEvent.mode.toLowerCase() : 'online',
-    location: rawEvent.location?.trim() || null,
-    registration_link: sanitizeUrl(rawEvent.registration_link),
-    source_group: rawEvent.source_group?.trim() || null,
-    raw_text: trimmedText,
-    confidence_score: typeof rawEvent.confidence_score === 'number' ? Math.max(0, Math.min(1, rawEvent.confidence_score)) : 0.85,
-    tags: [rawEvent.type || 'other', rawEvent.mode || 'online'],
-    reminder_offsets: [4320, 1440, 0],
-  }));
+  const normalizedEvents: ExtractedEvent[] = rawEvents.map((rawEvent: any, index: number) => {
+    const confidence = typeof rawEvent.confidence_score === 'number'
+      ? Math.max(0, Math.min(1, rawEvent.confidence_score))
+      : 0.85;
+
+    const extractionConfidence = ['high', 'medium', 'low'].includes(rawEvent.extraction_confidence)
+      ? rawEvent.extraction_confidence
+      : (confidence >= 0.8 ? 'high' : confidence >= 0.5 ? 'medium' : 'low');
+
+    const linkStatus = ['found', 'mentioned_in_comments', 'none'].includes(rawEvent.link_status)
+      ? rawEvent.link_status
+      : (rawEvent.registration_link ? 'found' : 'none');
+
+    const legibility = ['high', 'medium', 'low'].includes(rawEvent.legibility)
+      ? rawEvent.legibility
+      : 'high';
+
+    const isPast = Boolean(rawEvent.is_past_event);
+    const requiresReview = isPast || extractionConfidence === 'low' || legibility === 'low';
+
+    return {
+      temp_id: rawEvent.temp_id || `ext_${Date.now()}_${index}`,
+      title: rawEvent.title?.trim() || 'Untitled Event',
+      type: ['hackathon', 'ctf', 'meetup', 'workshop', 'deadline', 'other'].includes(rawEvent.type?.toLowerCase())
+        ? rawEvent.type.toLowerCase()
+        : 'other',
+      event_start_date: isValidDateFormat(rawEvent.event_start_date) ? rawEvent.event_start_date : null,
+      event_end_date: isValidDateFormat(rawEvent.event_end_date) ? rawEvent.event_end_date : null,
+      registration_deadline: isValidDateFormat(rawEvent.registration_deadline) ? rawEvent.registration_deadline : null,
+      time: rawEvent.time?.trim() || null,
+      mode: ['online', 'offline', 'hybrid'].includes(rawEvent.mode?.toLowerCase()) ? rawEvent.mode.toLowerCase() : 'online',
+      location: rawEvent.location?.trim() || null,
+      registration_link: sanitizeUrl(rawEvent.registration_link),
+      source_group: rawEvent.source_group?.trim() || null,
+      raw_text: trimmedText || '[Visual Extraction]',
+      confidence_score: confidence,
+      extraction_confidence: extractionConfidence,
+      link_status: linkStatus,
+      legibility,
+      is_past_event: isPast,
+      requires_review: requiresReview,
+      tags: [rawEvent.type || 'other', rawEvent.mode || 'online'],
+      reminder_offsets: [4320, 1440, 0],
+    };
+  });
 
   return {
     events: normalizedEvents,
-    raw_input: trimmedText,
+    tier_used: data.tier_used || (hasImage ? 'tier2_vision' : 'tier1_text'),
+    raw_input: trimmedText || (hasImage ? '[Image Poster Extraction]' : ''),
     extracted_at: data.extracted_at || new Date().toISOString(),
     quota: data.quota,
   };
+}
+
+/**
+ * Extract structured calendar events from an image/poster screenshot (Tier 2 Vision).
+ */
+export async function extractEventsFromImage(
+  imageBase64: string,
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp' = 'image/jpeg',
+  rawText?: string,
+  options?: ExtractEventsOptions
+): Promise<ExtractResponse> {
+  return extractEventsFromText(rawText || '', {
+    ...options,
+    imageBase64,
+    mimeType,
+  });
 }
 
 /** Fetch user's current daily extraction quota without triggering an extraction */

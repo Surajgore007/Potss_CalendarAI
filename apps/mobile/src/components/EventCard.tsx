@@ -67,6 +67,12 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onPress, hasClash }
               {modeConfig.label}
             </Text>
           </View>
+          {event.has_critical_alarm && event.status !== 'registered' && (
+            <View style={styles.alarmActiveBadge}>
+              <Ionicons name="alarm" size={11} color="#B45309" style={{ marginRight: 3 }} />
+              <Text style={styles.alarmActiveBadgeText}>Alarm</Text>
+            </View>
+          )}
         </View>
 
         {/* Urgency Pill */}
@@ -322,5 +328,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#2563EB',
+  },
+  alarmActiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  alarmActiveBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#92400E',
   },
 });

@@ -48,16 +48,115 @@ function InitialLayout() {
   const [showCollegePrompt, setShowCollegePrompt] = useState(false);
   const [checkedUid, setCheckedUid] = useState<string | null>(null);
 
-  // Queue to hold incoming share text until auth & layout are fully initialized
-  const [pendingShareText, setPendingShareText] = useState<string | null>(null);
-  const lastProcessedPayloadRef = React.useRef<{ text: string; time: number } | null>(null);
+  // Queue to hold incoming route target (from notification tap or deep link) until auth is resolved
+  const [pendingRoute, setPendingRoute] = useState<string | null>(null);
+  const lastProcessedNotifIdRef = React.useRef<string | null>(null);
+  const lastNavigatedRouteRef = React.useRef<{ route: string; time: number } | null>(null);
 
-  const parseSharedText = (rawUrl: string): string | null => {
+  // Queue to hold incoming share payload until auth & layout are fully initialized
+  type SharePayload = {
+    type: 'text' | 'image' | 'both';
+    text?: string;
+    imageUri?: string;
+  };
+  const [pendingSharePayload, setPendingSharePayload] = useState<SharePayload | null>(null);
+  const lastProcessedPayloadRef = React.useRef<{ key: string; time: number } | null>(null);
+
+  const extractRouteFromNotification = (notification: Notifications.Notification): string | null => {
+    try {
+      const data = notification?.request?.content?.data;
+      if (!data || typeof data !== 'object') return null;
+
+      // 1. Check for direct eventId / id / event_id
+      const eventId = data.eventId || data.id || data.event_id;
+      if (eventId && typeof eventId === 'string' && eventId.trim().length > 0) {
+        return `/event/${eventId.trim()}`;
+      }
+
+      // 2. Check for deep link URL in data payload
+      if (data.url && typeof data.url === 'string') {
+        const match = data.url.match(/event\/([^/?#]+)/);
+        if (match && match[1]) {
+          return `/event/${match[1].trim()}`;
+        }
+      }
+
+      // 3. Fallback for campus announcements without specific eventId
+      if (data.type === 'community_event' || data.type === 'college_announcement') {
+        return '/(auth)/college';
+      }
+    } catch (e) {
+      console.warn('Error extracting route from notification:', e);
+    }
+    return null;
+  };
+
+  const extractRouteFromUrl = (rawUrl: string): string | null => {
     try {
       const parsed = Linking.parse(rawUrl);
-      const sharedText = (parsed.queryParams?.text || parsed.queryParams?.shared_text) as string;
-      if (sharedText && typeof sharedText === 'string' && sharedText.trim().length > 0) {
-        return sharedText.trim();
+      const path = parsed.path || '';
+      // Matches "event/123", "(auth)/event/123", "/event/123"
+      const match = path.match(/event\/([^/?#]+)/);
+      if (match && match[1]) {
+        return `/event/${match[1].trim()}`;
+      }
+      const qId = parsed.queryParams?.eventId || parsed.queryParams?.id;
+      if (qId && typeof qId === 'string' && qId.trim().length > 0) {
+        return `/event/${qId.trim()}`;
+      }
+      if (path.includes('college')) {
+        return '/(auth)/college';
+      }
+    } catch (e) {
+      console.warn('Error extracting route from URL:', e);
+    }
+    return null;
+  };
+
+  const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
+    if (!response?.notification) return;
+    const notifId = response.notification.request.identifier;
+    if (notifId && lastProcessedNotifIdRef.current === notifId) {
+      return; // Deduplicate identical response triggers
+    }
+    if (notifId) {
+      lastProcessedNotifIdRef.current = notifId;
+    }
+
+    const route = extractRouteFromNotification(response.notification);
+    if (route) {
+      setPendingRoute(route);
+    }
+  };
+
+  const parseSharedPayload = (rawUrl: string): SharePayload | null => {
+    try {
+      const parsed = Linking.parse(rawUrl);
+      const rawText = (parsed.queryParams?.text || parsed.queryParams?.shared_text) as string;
+      const rawImageUri = (parsed.queryParams?.imageUri || parsed.queryParams?.image_uri) as string;
+
+      let cleanText: string | undefined = undefined;
+      if (rawText && typeof rawText === 'string' && rawText.trim().length > 0) {
+        cleanText = rawText.trim();
+      }
+
+      let cleanImageUri: string | undefined = undefined;
+      if (rawImageUri && typeof rawImageUri === 'string' && rawImageUri.trim().length > 0) {
+        let decoded = rawImageUri.trim();
+        try {
+          decoded = decodeURIComponent(decoded);
+        } catch {}
+        cleanImageUri = decoded;
+      }
+
+      if (cleanText && cleanImageUri) {
+        return { type: 'both', text: cleanText, imageUri: cleanImageUri };
+      }
+      if (cleanText) {
+        return { type: 'text', text: cleanText };
+      }
+      if (cleanImageUri) {
+        return { type: 'image', imageUri: cleanImageUri };
       }
     } catch (e) {
       console.warn('Error parsing incoming share URL:', e);
@@ -65,16 +164,32 @@ function InitialLayout() {
     return null;
   };
 
-  const isDuplicatePayload = (text: string): boolean => {
+  const isDuplicatePayload = (payload: SharePayload): boolean => {
+    const key = `${payload.type}:${payload.text || ''}:${payload.imageUri || ''}`;
     const now = Date.now();
     if (
       lastProcessedPayloadRef.current &&
-      lastProcessedPayloadRef.current.text === text &&
+      lastProcessedPayloadRef.current.key === key &&
       now - lastProcessedPayloadRef.current.time < 5000 // 5-second window
     ) {
       return true;
     }
     return false;
+  };
+
+  const processIncomingUrl = (url: string) => {
+    // 1. Check if it's an event or deep link route
+    const route = extractRouteFromUrl(url);
+    if (route) {
+      setPendingRoute(route);
+      return;
+    }
+
+    // 2. Check if it's a shared announcement text / screenshot payload
+    const payload = parseSharedPayload(url);
+    if (payload && !isDuplicatePayload(payload)) {
+      setPendingSharePayload(payload);
+    }
   };
 
   // 1. Listen for both cold-start and warm-start share / deep-link intents
@@ -83,10 +198,7 @@ function InitialLayout() {
     Linking.getInitialURL()
       .then((url) => {
         if (url) {
-          const text = parseSharedText(url);
-          if (text && !isDuplicatePayload(text)) {
-            setPendingShareText(text);
-          }
+          processIncomingUrl(url);
         }
       })
       .catch((err) => {
@@ -96,17 +208,14 @@ function InitialLayout() {
     // Warm start: listen for runtime / background share events
     const subscription = Linking.addEventListener('url', (event) => {
       if (event.url) {
-        const text = parseSharedText(event.url);
-        if (text && !isDuplicatePayload(text)) {
-          setPendingShareText(text);
-        }
+        processIncomingUrl(event.url);
       }
     });
 
     return () => subscription.remove();
   }, []);
 
-  // 2. Setup Android notification channel & listen for push notification click to deep-link
+  // 2. Setup Android notification channel & listen for notification taps (cold & warm start)
   useEffect(() => {
     if (Platform.OS === 'android') {
       Notifications.setNotificationChannelAsync('sies-gst-announcements', {
@@ -121,14 +230,25 @@ function InitialLayout() {
       }).catch(() => {});
     }
 
-    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data;
-      if (data?.type === 'community_event' || data?.type === 'event_reminder') {
-        router.push('/(auth)/college');
-      }
-    });
+    if (Platform.OS !== 'web') {
+      // Cold-start notification check (user tapped notification when app was closed/killed)
+      Notifications.getLastNotificationResponseAsync()
+        .then((response) => {
+          if (response) {
+            handleNotificationResponse(response);
+          }
+        })
+        .catch((err) => {
+          console.warn('Error reading last notification response:', err);
+        });
 
-    return () => responseSub.remove();
+      // Warm-start notification listener (user tapped notification while app is running/background)
+      const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+        handleNotificationResponse(response);
+      });
+
+      return () => responseSub.remove();
+    }
   }, []);
 
   // Sync push notification registration whenever user is logged in
@@ -138,36 +258,66 @@ function InitialLayout() {
     }
   }, [user?.uid]);
 
-  // 3. Process pending share payload or apply route guard once auth is ready
+  // 3. Process pending notification / deep-link route or share payload once auth is ready
   useEffect(() => {
     if (isLoading) return;
 
-    if (pendingShareText) {
+    // Priority 1: User tapped a notification or deep link to open a specific event
+    if (pendingRoute) {
       if (user) {
-        const textToProcess = pendingShareText;
-        setPendingShareText(null);
-        lastProcessedPayloadRef.current = { text: textToProcess, time: Date.now() };
+        const routeToNavigate = pendingRoute;
+        setPendingRoute(null);
+        lastNavigatedRouteRef.current = { route: routeToNavigate, time: Date.now() };
+        router.push(routeToNavigate as any);
+        return;
+      } else {
+        // User not logged in yet — route to login, but keep pendingRoute held until login succeeds
+        applyRouteGuard();
+        return;
+      }
+    }
+
+    // Priority 2: User shared text/screenshot from external app
+    if (pendingSharePayload) {
+      if (user) {
+        const payloadToProcess = pendingSharePayload;
+        setPendingSharePayload(null);
+        lastProcessedPayloadRef.current = {
+          key: `${payloadToProcess.type}:${payloadToProcess.text || ''}:${payloadToProcess.imageUri || ''}`,
+          time: Date.now(),
+        };
+
+        const params: Record<string, string> = { autoExtract: 'true' };
+        if (payloadToProcess.text) {
+          params.text = payloadToProcess.text;
+        }
+        if (payloadToProcess.imageUri) {
+          params.imageUri = payloadToProcess.imageUri;
+        }
 
         router.push({
           pathname: '/(auth)/extract',
-          params: { text: textToProcess, autoExtract: 'true' },
+          params,
         });
         return;
       } else {
-        // User not logged in yet — route to login, but keep pendingShareText held until login finishes
         applyRouteGuard();
         return;
       }
     }
 
     applyRouteGuard();
-  }, [user, isLoading, pendingShareText, segments]);
+  }, [user, isLoading, pendingRoute, pendingSharePayload, segments]);
 
   const applyRouteGuard = () => {
     const inAuthGroup = segments[0] === '(auth)';
     if (!user && inAuthGroup) {
       router.replace('/(public)/login');
     } else if (user && !inAuthGroup) {
+      // Prevent overriding a notification / deep-link navigation in flight
+      if (lastNavigatedRouteRef.current && Date.now() - lastNavigatedRouteRef.current.time < 2500) {
+        return;
+      }
       router.replace('/(auth)');
     } else if (!user && !segments.length) {
       router.replace('/(public)/login');
