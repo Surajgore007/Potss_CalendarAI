@@ -91,6 +91,7 @@ object VankoAlarmScheduler {
                 putExtra("stage", item.stage)
                 putExtra("targetDeadlineMs", item.targetDeadlineMs)
                 putExtra("registrationUrl", item.registrationUrl)
+                putExtra("userId", item.userId)
             }
 
             val requestCode = item.alarmId.hashCode()
@@ -168,6 +169,25 @@ object VankoAlarmScheduler {
         }
         VankoAlarmStore.clear(context)
         Log.i(TAG, "Cancelled all critical alarms (${all.size} total)")
+    }
+
+    fun cancelAlarmsForOtherUsers(context: Context, currentUserId: String) {
+        val removed = VankoAlarmStore.removeAlarmsForOtherUsers(context, currentUserId)
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+
+        for (item in removed) {
+            val alarmIntent = Intent(context, VankoAlarmReceiver::class.java).apply {
+                action = ACTION_FIRE_ALARM
+            }
+            val requestCode = item.alarmId.hashCode()
+            val pendingIntent = PendingIntent.getBroadcast(context, requestCode, alarmIntent, pendingFlags)
+            alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
+        }
+        if (removed.isNotEmpty()) {
+            Log.i(TAG, "Cancelled ${removed.size} stale alarms belonging to other users")
+        }
     }
 }
 

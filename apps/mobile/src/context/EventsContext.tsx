@@ -18,8 +18,8 @@ import {
   normalizeDateString,
 } from '@eventpulse/shared';
 import { useAuth } from './AuthContext';
-import { syncAllEventNotifications, cancelEventNotifications, remapNotificationIds } from '../services/notificationService';
-import { syncAllCriticalAlarms, drainPendingAlarmActions, cancelEventCriticalAlarm } from '../services/alarmService';
+import { syncAllEventNotifications, cancelEventNotifications, remapNotificationIds, cancelAllLocalNotifications } from '../services/notificationService';
+import { syncAllCriticalAlarms, drainPendingAlarmActions, cancelEventCriticalAlarm, cancelAllCriticalAlarms } from '../services/alarmService';
 import { isOnline, subscribeToNetworkStatus } from '../services/networkService';
 
 function normalizeEventData(e: CalendarEvent): CalendarEvent {
@@ -99,6 +99,7 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const isDrainingRef = useRef(false);
   const drainTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
+  const previousUserIdRef = useRef<string | null>(null);
 
   // 1. Initial Device-Level Cache Hydration (Frame 0 load)
   useEffect(() => {
@@ -130,7 +131,7 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (events.length === 0) return;
 
     syncAllEventNotifications(events).catch(() => {});
-    syncAllCriticalAlarms(events).catch(() => {});
+    syncAllCriticalAlarms(events, user.uid).catch(() => {});
   }, [events, authLoading, user]);
 
   // Drain any pending actions triggered from Native Alarm notification buttons (e.g. "Mark as Submitted")
@@ -299,8 +300,20 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setPendingWrites([]);
       isHydratedRef.current = true;
       setIsLoading(false);
+      previousUserIdRef.current = null;
+      // Multi-tenancy guard: Cancel all notifications & alarms when transitioning to logged-out state!
+      cancelAllLocalNotifications().catch(() => {});
+      cancelAllCriticalAlarms().catch(() => {});
       return;
     }
+
+    // 2b. Account Switch Guard: If current user is different from previously loaded user, purge stale alarms
+    if (previousUserIdRef.current && previousUserIdRef.current !== user.uid) {
+      console.log(`[EventsContext] User switched from ${previousUserIdRef.current} to ${user.uid}. Purging old alarms.`);
+      cancelAllLocalNotifications().catch(() => {});
+      cancelAllCriticalAlarms().catch(() => {});
+    }
+    previousUserIdRef.current = user.uid;
 
     const cacheKey = `${EVENTS_CACHE_PREFIX}${user.uid}`;
     const queueKey = `${PENDING_WRITES_PREFIX}${user.uid}`;

@@ -12,7 +12,8 @@ data class AlarmItem(
     val triggerTimeMs: Long,
     val targetDeadlineMs: Long,
     val stage: Int, // 1 = Stage 1 (e.g. 2h before), 2 = Stage 2 (e.g. 15m before)
-    val registrationUrl: String?
+    val registrationUrl: String?,
+    val userId: String? = null
 ) {
     fun toJson(): JSONObject {
         return JSONObject().apply {
@@ -23,6 +24,7 @@ data class AlarmItem(
             put("targetDeadlineMs", targetDeadlineMs)
             put("stage", stage)
             put("registrationUrl", registrationUrl ?: "")
+            put("userId", userId ?: "")
         }
     }
 
@@ -35,7 +37,8 @@ data class AlarmItem(
                 triggerTimeMs = json.optLong("triggerTimeMs", 0L),
                 targetDeadlineMs = json.optLong("targetDeadlineMs", 0L),
                 stage = json.optInt("stage", 1),
-                registrationUrl = json.optString("registrationUrl").takeIf { it.isNotBlank() }
+                registrationUrl = json.optString("registrationUrl").takeIf { it.isNotBlank() },
+                userId = json.optString("userId").takeIf { it.isNotBlank() }
             )
         }
     }
@@ -45,9 +48,35 @@ object VankoAlarmStore {
     private const val PREFS_NAME = "vanko_critical_alarms_store"
     private const val KEY_ALARMS = "active_alarms"
     private const val KEY_PENDING_ACTIONS = "pending_actions"
+    private const val KEY_ACTIVE_USER_ID = "active_user_id"
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+
+    @Synchronized
+    fun getActiveUserId(context: Context): String? {
+        val prefs = getPrefs(context)
+        return prefs.getString(KEY_ACTIVE_USER_ID, null)?.takeIf { it.isNotBlank() }
+    }
+
+    @Synchronized
+    fun setActiveUserId(context: Context, userId: String?) {
+        val prefs = getPrefs(context)
+        if (userId.isNullOrBlank()) {
+            prefs.edit().remove(KEY_ACTIVE_USER_ID).apply()
+        } else {
+            prefs.edit().putString(KEY_ACTIVE_USER_ID, userId.trim()).apply()
+        }
+    }
+
+    @Synchronized
+    fun removeAlarmsForOtherUsers(context: Context, currentUserId: String): List<AlarmItem> {
+        val list = getAllAlarms(context).toMutableList()
+        val toRemove = list.filter { it.userId != null && it.userId != currentUserId }
+        list.removeAll { it.userId != null && it.userId != currentUserId }
+        persistAlarms(context, list)
+        return toRemove
     }
 
     @Synchronized

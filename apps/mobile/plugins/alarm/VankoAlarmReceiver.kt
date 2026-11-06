@@ -45,6 +45,20 @@ class VankoAlarmReceiver : BroadcastReceiver() {
             val title = intent.getStringExtra("title") ?: "Event Deadline"
             val stage = intent.getIntExtra("stage", 1)
             val registrationUrl = intent.getStringExtra("registrationUrl")
+            val alarmUserId = intent.getStringExtra("userId")
+
+            // MULTI-TENANCY AUTH GUARD:
+            // Check if user is logged in and matches the owner of this alarm.
+            // If the user signed out, or switched to another account, do NOT ring this alarm!
+            val activeUserId = VankoAlarmStore.getActiveUserId(context)
+            if (activeUserId.isNullOrBlank() || (!alarmUserId.isNullOrBlank() && activeUserId != alarmUserId)) {
+                Log.w(
+                    TAG,
+                    "Suppressed alarm: Alarm $alarmId owned by '$alarmUserId' but active user on device is '$activeUserId' (or logged out). Disarming."
+                )
+                VankoAlarmScheduler.cancelAlarm(context, alarmId)
+                return
+            }
 
             Log.i(TAG, "Firing critical deadline alarm: $alarmId ($title) stage=$stage")
 

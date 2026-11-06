@@ -32,12 +32,24 @@ class VankoBootReceiver : BroadcastReceiver() {
 
         if (!validActions.contains(action) && !isExactAlarmPermChange) return
 
+        val activeUserId = VankoAlarmStore.getActiveUserId(context)
+        if (activeUserId.isNullOrBlank()) {
+            Log.i(TAG, "Device booted with no logged-in user. Suppressing alarm re-scheduling.")
+            return
+        }
+
         VankoAlarmScheduler.ensureAlarmChannel(context)
         val allAlarms = VankoAlarmStore.getAllAlarms(context)
         val now = System.currentTimeMillis()
         var rescheduledCount = 0
 
         for (item in allAlarms) {
+            // Disarm any alarms belonging to a different user account
+            if (item.userId != null && item.userId != activeUserId) {
+                VankoAlarmScheduler.cancelAlarm(context, item.alarmId)
+                continue
+            }
+
             if (item.triggerTimeMs > now) {
                 // Standard case: Alarm trigger is still in future
                 val success = VankoAlarmScheduler.scheduleAlarm(context, item)

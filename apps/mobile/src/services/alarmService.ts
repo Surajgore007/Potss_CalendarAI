@@ -210,7 +210,7 @@ export function computeAlarmSchedule(event: CalendarEvent): {
 /**
  * Schedule critical deadline alarms for an event on native Android via setAlarmClock()
  */
-export async function scheduleEventCriticalAlarm(event: CalendarEvent): Promise<boolean> {
+export async function scheduleEventCriticalAlarm(event: CalendarEvent, userId?: string): Promise<boolean> {
   if (!isNativeAlarmSupported()) return false;
   if (!event || !event.id) return false;
 
@@ -245,7 +245,8 @@ export async function scheduleEventCriticalAlarm(event: CalendarEvent): Promise<
         t.triggerTimeMs,
         schedule.targetMs,
         t.stage,
-        event.registration_link || null
+        event.registration_link || null,
+        userId || event.userId || null
       );
     }
     return true;
@@ -307,15 +308,45 @@ export async function drainPendingAlarmActions(): Promise<{ action: string; even
 }
 
 /**
+ * Set the currently authenticated user in the native alarm layer.
+ * If userId is null (sign out) or changes (account switch), stale alarms are cleared.
+ */
+export async function setNativeActiveUser(userId: string | null): Promise<boolean> {
+  if (!isNativeAlarmSupported()) return false;
+  try {
+    return await VankoAlarmModule.setActiveUser(userId);
+  } catch (err) {
+    console.warn('[AlarmService] Error setting native active user:', err);
+    return false;
+  }
+}
+
+/**
  * Synchronize all critical alarms for a list of calendar events
  */
-export async function syncAllCriticalAlarms(events: CalendarEvent[]): Promise<void> {
-  if (!isNativeAlarmSupported() || events.length === 0) return;
+export async function syncAllCriticalAlarms(events: CalendarEvent[], userId?: string): Promise<void> {
+  if (!isNativeAlarmSupported()) return;
 
   try {
+    // 1. Query all active scheduled alarms from native store
+    const scheduled = await getActiveScheduledAlarms();
+    const activeEventIds = new Set(
+      events
+        .filter((e) => e.has_critical_alarm && e.status !== 'registered' && e.status !== 'skipped' && !isEventFinished(e))
+        .map((e) => e.id)
+    );
+
+    // Cancel any native alarm whose event is no longer in current user's active events
+    for (const record of scheduled) {
+      if (!activeEventIds.has(record.eventId)) {
+        await cancelEventCriticalAlarm(record.eventId);
+      }
+    }
+
+    // 2. Schedule or update valid active alarms
     for (const event of events) {
-      if (event.has_critical_alarm && event.status !== 'registered' && event.status !== 'skipped' && !isEventFinished(event)) {
-        await scheduleEventCriticalAlarm(event);
+      if (activeEventIds.has(event.id)) {
+        await scheduleEventCriticalAlarm(event, userId || event.userId);
       } else {
         await cancelEventCriticalAlarm(event.id);
       }

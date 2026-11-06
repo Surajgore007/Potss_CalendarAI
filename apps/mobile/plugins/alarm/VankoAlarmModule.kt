@@ -24,6 +24,7 @@ class VankoAlarmModule(private val reactContext: ReactApplicationContext) :
         targetDeadlineMs: Double,
         stage: Int,
         registrationUrl: String?,
+        userId: String?,
         promise: Promise
     ) {
         try {
@@ -34,12 +35,36 @@ class VankoAlarmModule(private val reactContext: ReactApplicationContext) :
                 triggerTimeMs = triggerTimeMs.toLong(),
                 targetDeadlineMs = targetDeadlineMs.toLong(),
                 stage = stage,
-                registrationUrl = registrationUrl
+                registrationUrl = registrationUrl,
+                userId = userId
             )
             val success = VankoAlarmScheduler.scheduleAlarm(reactContext, item)
             promise.resolve(success)
         } catch (e: Exception) {
             promise.reject("ALARM_SCHEDULE_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun setActiveUser(userId: String?, promise: Promise) {
+        try {
+            val previousUid = VankoAlarmStore.getActiveUserId(reactContext)
+            if (userId.isNullOrBlank()) {
+                // User signed out: cancel all alarms and drop stored active user
+                VankoAlarmScheduler.cancelAllAlarms(reactContext)
+                VankoAlarmStore.setActiveUserId(reactContext, null)
+            } else {
+                if (!previousUid.isNullOrBlank() && previousUid != userId) {
+                    // Switched account: cancel all alarms from previous account
+                    VankoAlarmScheduler.cancelAllAlarms(reactContext)
+                }
+                VankoAlarmStore.setActiveUserId(reactContext, userId)
+                // Purge any stale alarms belonging to another user
+                VankoAlarmScheduler.cancelAlarmsForOtherUsers(reactContext, userId)
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("SET_ACTIVE_USER_ERROR", e.message, e)
         }
     }
 

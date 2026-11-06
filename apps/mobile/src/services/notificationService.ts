@@ -2,6 +2,13 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CalendarEvent, isEventFinished } from '@eventpulse/shared';
 
+// Track current active user for local notification multi-tenancy isolation
+let currentActiveUserId: string | null = null;
+
+export function setActiveNotificationUser(userId: string | null) {
+  currentActiveUserId = userId;
+}
+
 // Lazy loader for notifications on native platforms
 let notificationsModule: typeof import('expo-notifications') | null = null;
 function getNotifications(): typeof import('expo-notifications') | null {
@@ -10,12 +17,42 @@ function getNotifications(): typeof import('expo-notifications') | null {
     try {
       notificationsModule = require('expo-notifications');
       notificationsModule?.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldPlaySound: true,
-          shouldSetBadge: true,
-          shouldShowBanner: true,
-          shouldShowList: true,
-        }),
+        handleNotification: async (notif) => {
+          // MULTI-TENANCY GUARD:
+          // If notification was scheduled by another user who logged out or switched, suppress all alerts
+          try {
+            const notifUserId = notif?.request?.content?.data?.userId;
+            if (notifUserId && currentActiveUserId && notifUserId !== currentActiveUserId) {
+              console.warn(
+                `[NotificationService] Suppressed notification: Owned by ${notifUserId}, active user is ${currentActiveUserId}`
+              );
+              return {
+                shouldPlaySound: false,
+                shouldSetBadge: false,
+                shouldShowBanner: false,
+                shouldShowList: false,
+              };
+            }
+            if (!currentActiveUserId) {
+              // Logged out state: suppress all notifications
+              return {
+                shouldPlaySound: false,
+                shouldSetBadge: false,
+                shouldShowBanner: false,
+                shouldShowList: false,
+              };
+            }
+          } catch {
+            // Ignore check error and fallback to standard behavior
+          }
+
+          return {
+            shouldPlaySound: true,
+            shouldSetBadge: true,
+            shouldShowBanner: true,
+            shouldShowList: true,
+          };
+        },
       });
 
       if (Platform.OS === 'android') {
@@ -179,7 +216,13 @@ export async function scheduleEventNotifications(event: CalendarEvent, hasPermis
               body: isUrgent
                 ? `Registration closes in 2 hours for "${event.title}". Submit your entry now!`
                 : `Registration for "${event.title}" closes in ${tier.label}. Don't miss out!`,
-              data: { eventId: event.id, type: 'deadline', tier: tier.offsetHours, url: `/event/${event.id}` },
+              data: {
+                eventId: event.id,
+                userId: event.userId,
+                type: 'deadline',
+                tier: tier.offsetHours,
+                url: `/event/${event.id}`,
+              },
               sound: true,
             },
             trigger: {
@@ -216,7 +259,13 @@ export async function scheduleEventNotifications(event: CalendarEvent, hasPermis
               body: isUrgent
                 ? `"${event.title}" starts in 2 hours${event.location ? ` at ${event.location}` : ''}! Get ready.`
                 : `"${event.title}" kicks off in ${tier.label}. Check schedule and details!`,
-              data: { eventId: event.id, type: 'event_start', tier: tier.offsetHours, url: `/event/${event.id}` },
+              data: {
+                eventId: event.id,
+                userId: event.userId,
+                type: 'event_start',
+                tier: tier.offsetHours,
+                url: `/event/${event.id}`,
+              },
               sound: true,
             },
             trigger: {
@@ -283,6 +332,21 @@ let queuedEvents: CalendarEvent[] | null = null;
 let queuedOptions: SyncNotificationOptions | undefined = undefined;
 
 /**
+ * Cancel ALL scheduled local notifications unconditionally (e.g. user sign-out or account switch)
+ */
+export async function cancelAllLocalNotifications(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    const notif = getNotifications();
+    if (notif) {
+      await notif.cancelAllScheduledNotificationsAsync();
+    }
+  } catch (e) {
+    console.warn('[NotificationService] Error cancelling all local notifications:', e);
+  }
+}
+
+/**
  * Sync all notifications for active events with concurrency lock and legacy purge.
  * CRITICAL SAFETY: If events is empty, will NOT cancel notifications unless options?.allowPurgeAll is explicitly true.
  */
@@ -297,6 +361,12 @@ export async function syncAllEventNotifications(
     console.warn(
       '[NotificationService] syncAllEventNotifications called with empty events array without allowPurgeAll: true. Preserving existing OS alarms.'
     );
+    return;
+  }
+
+  // If explicit purge-all requested (e.g. sign out), cancel everything immediately
+  if (events.length === 0 && options?.allowPurgeAll) {
+    await cancelAllLocalNotifications();
     return;
   }
 

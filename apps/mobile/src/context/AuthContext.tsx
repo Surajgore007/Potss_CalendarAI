@@ -32,8 +32,8 @@ import {
 } from '@eventpulse/shared';
 import { isOnline } from '../services/networkService';
 import { registerForPushNotificationsAsync, unregisterPushTokenAsync } from '../services/pushNotificationService';
-import { syncAllEventNotifications } from '../services/notificationService';
-import { cancelAllCriticalAlarms } from '../services/alarmService';
+import { syncAllEventNotifications, cancelAllLocalNotifications, setActiveNotificationUser } from '../services/notificationService';
+import { cancelAllCriticalAlarms, setNativeActiveUser } from '../services/alarmService';
 
 let cachedAuth: Auth | null = null;
 function getAppAuth(app: any): Auth {
@@ -399,6 +399,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Multi-Tenancy Guard: Synchronize native alarm engine & local notifications with active user session
+  useEffect(() => {
+    if (user?.uid) {
+      setNativeActiveUser(user.uid).catch(() => {});
+      setActiveNotificationUser(user.uid);
+    } else if (!isLoading && !user) {
+      setNativeActiveUser(null).catch(() => {});
+      setActiveNotificationUser(null);
+    }
+  }, [user?.uid, isLoading]);
+
   const signOutUser = async () => {
     setIsLoading(true);
     try {
@@ -416,9 +427,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Sign out warning:', e);
       }
       await AsyncStorage.multiRemove([AUTH_STORAGE_KEY, EVENTS_CACHE_LATEST]).catch(() => {});
-      // Cancel scheduled notifications & critical alarms only upon explicit user logout
+      // Unconditionally cancel scheduled notifications & critical alarms upon explicit user logout
+      await cancelAllLocalNotifications().catch(() => {});
       await syncAllEventNotifications([], { allowPurgeAll: true }).catch(() => {});
+      await setNativeActiveUser(null).catch(() => {});
       await cancelAllCriticalAlarms().catch(() => {});
+      setActiveNotificationUser(null);
       setUser(null);
       userRef.current = null;
       setFirebaseUser(null);
