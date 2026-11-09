@@ -347,8 +347,6 @@ export async function syncAllCriticalAlarms(events: CalendarEvent[], userId?: st
     for (const event of events) {
       if (activeEventIds.has(event.id)) {
         await scheduleEventCriticalAlarm(event, userId || event.userId);
-      } else {
-        await cancelEventCriticalAlarm(event.id);
       }
     }
   } catch (err) {

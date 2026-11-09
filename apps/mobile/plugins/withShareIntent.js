@@ -172,13 +172,14 @@ const withShareIntentMainActivity = (config) => {
       // - Image Only (no text): pass image
       val hasText = !sharedText.isNullOrBlank()
       val hasImageUri = cachedImageUri != null
+      val shareNonce = System.currentTimeMillis()
 
       if (hasText && hasImageUri) {
         try {
           val encodedText = URLEncoder.encode(sharedText, "UTF-8")
           val encodedImg = URLEncoder.encode(cachedImageUri, "UTF-8")
           incomingIntent.action = Intent.ACTION_VIEW
-          incomingIntent.data = Uri.parse("eventpulse://(auth)/extract?text=\$encodedText&imageUri=\$encodedImg&autoExtract=true")
+          incomingIntent.data = Uri.parse("eventpulse://(auth)/extract?text=\$encodedText&imageUri=\$encodedImg&autoExtract=true&shareId=\$shareNonce")
           setIntent(incomingIntent)
           return
         } catch (e: Exception) {}
@@ -186,7 +187,7 @@ const withShareIntentMainActivity = (config) => {
         try {
           val encodedText = URLEncoder.encode(sharedText, "UTF-8")
           incomingIntent.action = Intent.ACTION_VIEW
-          incomingIntent.data = Uri.parse("eventpulse://(auth)/extract?text=\$encodedText&autoExtract=true")
+          incomingIntent.data = Uri.parse("eventpulse://(auth)/extract?text=\$encodedText&autoExtract=true&shareId=\$shareNonce")
           setIntent(incomingIntent)
           return
         } catch (e: Exception) {}
@@ -194,7 +195,7 @@ const withShareIntentMainActivity = (config) => {
         try {
           val encodedImg = URLEncoder.encode(cachedImageUri, "UTF-8")
           incomingIntent.action = Intent.ACTION_VIEW
-          incomingIntent.data = Uri.parse("eventpulse://(auth)/extract?imageUri=\$encodedImg&autoExtract=true")
+          incomingIntent.data = Uri.parse("eventpulse://(auth)/extract?imageUri=\$encodedImg&autoExtract=true&shareId=\$shareNonce")
           setIntent(incomingIntent)
           return
         } catch (e: Exception) {}

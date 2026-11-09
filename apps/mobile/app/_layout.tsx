@@ -21,24 +21,22 @@ import { OnboardingModal } from '../src/components/OnboardingModal';
 import { CampusAffiliationModal } from '../src/components/CampusAffiliationModal';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
 import { initGlobalErrorTracking } from '../src/services/telemetry';
+import { handleNotificationPresentation } from '../src/services/notificationService';
 
 // Initialize global crash & error telemetry immediately
 initGlobalErrorTracking();
 
-// Initialize notification behavior immediately on module load so notifications are never dropped
+// Initialize notification behavior immediately on module load with multi-tenancy account guard
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
+    handleNotification: handleNotificationPresentation,
   });
 }
 
 const ONBOARDING_KEY_PREFIX = '@vanko_onboarding_done_';
 const COLLEGE_PROMPT_KEY_PREFIX = '@vanko_college_prompt_answered_';
+const LAST_PROCESSED_SHARE_ID_KEY = '@vanko_last_processed_share_id';
+const LAST_PROCESSED_SHARE_KEY_STORE = '@vanko_last_processed_share_key';
 
 function InitialLayout() {
   const { user, isLoading } = useAuth();
@@ -58,9 +56,25 @@ function InitialLayout() {
     type: 'text' | 'image' | 'both';
     text?: string;
     imageUri?: string;
+    shareId?: string;
   };
   const [pendingSharePayload, setPendingSharePayload] = useState<SharePayload | null>(null);
   const lastProcessedPayloadRef = React.useRef<{ key: string; time: number } | null>(null);
+  const lastProcessedShareIdRef = React.useRef<string | null>(null);
+  const lastProcessedPayloadKeyRef = React.useRef<string | null>(null);
+
+  // Hydrate processed share markers to prevent Android stale intent replays on app reopen
+  useEffect(() => {
+    Promise.all([
+      AsyncStorage.getItem(LAST_PROCESSED_SHARE_ID_KEY),
+      AsyncStorage.getItem(LAST_PROCESSED_SHARE_KEY_STORE),
+    ])
+      .then(([savedShareId, savedKey]) => {
+        if (savedShareId) lastProcessedShareIdRef.current = savedShareId;
+        if (savedKey) lastProcessedPayloadKeyRef.current = savedKey;
+      })
+      .catch(() => {});
+  }, []);
 
   const extractRouteFromNotification = (notification: Notifications.Notification): string | null => {
     try {
@@ -134,6 +148,7 @@ function InitialLayout() {
       const parsed = Linking.parse(rawUrl);
       const rawText = (parsed.queryParams?.text || parsed.queryParams?.shared_text) as string;
       const rawImageUri = (parsed.queryParams?.imageUri || parsed.queryParams?.image_uri) as string;
+      const rawShareId = (parsed.queryParams?.shareId || parsed.queryParams?.share_id) as string;
 
       let cleanText: string | undefined = undefined;
       if (rawText && typeof rawText === 'string' && rawText.trim().length > 0) {
@@ -149,14 +164,19 @@ function InitialLayout() {
         cleanImageUri = decoded;
       }
 
+      let cleanShareId: string | undefined = undefined;
+      if (rawShareId && typeof rawShareId === 'string' && rawShareId.trim().length > 0) {
+        cleanShareId = rawShareId.trim();
+      }
+
       if (cleanText && cleanImageUri) {
-        return { type: 'both', text: cleanText, imageUri: cleanImageUri };
+        return { type: 'both', text: cleanText, imageUri: cleanImageUri, shareId: cleanShareId };
       }
       if (cleanText) {
-        return { type: 'text', text: cleanText };
+        return { type: 'text', text: cleanText, shareId: cleanShareId };
       }
       if (cleanImageUri) {
-        return { type: 'image', imageUri: cleanImageUri };
+        return { type: 'image', imageUri: cleanImageUri, shareId: cleanShareId };
       }
     } catch (e) {
       console.warn('Error parsing incoming share URL:', e);
@@ -165,15 +185,17 @@ function InitialLayout() {
   };
 
   const isDuplicatePayload = (payload: SharePayload): boolean => {
-    const key = `${payload.type}:${payload.text || ''}:${payload.imageUri || ''}`;
-    const now = Date.now();
-    if (
-      lastProcessedPayloadRef.current &&
-      lastProcessedPayloadRef.current.key === key &&
-      now - lastProcessedPayloadRef.current.time < 5000 // 5-second window
-    ) {
+    // 1. If explicit shareId is present and already processed, ignore Android intent replay
+    if (payload.shareId && lastProcessedShareIdRef.current === payload.shareId) {
       return true;
     }
+
+    // 2. If content key was already processed and consumed, ignore replay on app reopen
+    const key = `${payload.type}:${payload.text || ''}:${payload.imageUri || ''}`;
+    if (lastProcessedPayloadKeyRef.current === key) {
+      return true;
+    }
+
     return false;
   };
 
@@ -282,8 +304,17 @@ function InitialLayout() {
       if (user) {
         const payloadToProcess = pendingSharePayload;
         setPendingSharePayload(null);
+        const payloadKey = `${payloadToProcess.type}:${payloadToProcess.text || ''}:${payloadToProcess.imageUri || ''}`;
+        lastProcessedPayloadKeyRef.current = payloadKey;
+        AsyncStorage.setItem(LAST_PROCESSED_SHARE_KEY_STORE, payloadKey).catch(() => {});
+
+        if (payloadToProcess.shareId) {
+          lastProcessedShareIdRef.current = payloadToProcess.shareId;
+          AsyncStorage.setItem(LAST_PROCESSED_SHARE_ID_KEY, payloadToProcess.shareId).catch(() => {});
+        }
+
         lastProcessedPayloadRef.current = {
-          key: `${payloadToProcess.type}:${payloadToProcess.text || ''}:${payloadToProcess.imageUri || ''}`,
+          key: payloadKey,
           time: Date.now(),
         };
 
@@ -293,6 +324,9 @@ function InitialLayout() {
         }
         if (payloadToProcess.imageUri) {
           params.imageUri = payloadToProcess.imageUri;
+        }
+        if (payloadToProcess.shareId) {
+          params.shareId = payloadToProcess.shareId;
         }
 
         router.push({

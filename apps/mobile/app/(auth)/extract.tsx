@@ -10,10 +10,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import {
   extractEventsFromText,
@@ -50,7 +51,6 @@ export default function ExtractStudioScreen() {
   const [showManualModal, setShowManualModal] = useState(false);
   type ExtractionSource = 'text' | 'image';
   const [preferredSource, setPreferredSource] = useState<ExtractionSource>('text');
-  const [showPosterFallbackBtn, setShowPosterFallbackBtn] = useState(false);
 
   // Load quota stats on mount
   const refreshQuota = useCallback(async () => {
@@ -88,7 +88,7 @@ export default function ExtractStudioScreen() {
   };
 
   // 2. Perform Image AI Vision Extraction
-  const performImageExtraction = async (imageUriToExtract: string, preloadedBase64?: string) => {
+  const performImageExtraction = async (imageUriToExtract: string, preloadedBase64?: string, contextText?: string) => {
     if (!isAdmin && quotaInfo && quotaInfo.remaining <= 0) {
       setErrorMsg('Daily schedule scan limit reached. Your allowance refreshes tomorrow at midnight.');
       return;
@@ -104,7 +104,7 @@ export default function ExtractStudioScreen() {
         base64 = await uriToBase64(imageUriToExtract);
       }
 
-      const response = await extractEventsFromImage(base64, 'image/jpeg', rawText, {
+      const response = await extractEventsFromImage(base64, 'image/jpeg', contextText || rawText, {
         getIdToken,
         workerUrl: process.env.EXPO_PUBLIC_WORKER_URL || process.env.EXPO_PUBLIC_API_URL,
       });
@@ -142,7 +142,11 @@ export default function ExtractStudioScreen() {
       setPendingExtractions(enrichedEvents);
       setIsExtracting(false);
       setIsVisionScanning(false);
-      router.push('/(auth)/confirm');
+      setRawText('');
+      setSelectedImageUri(null);
+      setErrorMsg(null);
+      processedIntentKeyRef.current = '';
+      router.replace('/(auth)/confirm');
     } catch (err: any) {
       setIsExtracting(false);
       setIsVisionScanning(false);
@@ -222,13 +226,13 @@ export default function ExtractStudioScreen() {
       setPreferredSource('image');
     }
 
-    // 4. Trigger exactly ONE extraction request (1 API call, 1 quota consumed)
-    // When text is present, extract text first. This saves ~2,500 tokens on Groq,
-    // finishes in <1s, and achieves 100% link accuracy.
-    // Only if text is absent and only an image is present, run Vision extraction.
+    // 4. Trigger extraction request:
+    // When text is present, extract text first.
+    // If text has no events, it automatically falls back to vision scan of decodedImageUri.
+    // If only image is present, runs vision extraction directly.
     const timer = setTimeout(() => {
       if (decodedText.length > 0) {
-        performExtraction(decodedText);
+        performExtraction(decodedText, decodedImageUri || undefined);
       } else if (decodedImageUri.length > 0) {
         performImageExtraction(decodedImageUri);
       }
@@ -237,8 +241,13 @@ export default function ExtractStudioScreen() {
     return () => clearTimeout(timer);
   }, [params?.text, params?.shared_text, params?.initialText, params?.imageUri, params?.image_uri]);
 
-  const performExtraction = async (textToExtract: string) => {
+  const performExtraction = async (textToExtract: string, fallbackImageUri?: string) => {
     if (!textToExtract.trim()) {
+      const candidateImage = fallbackImageUri || selectedImageUri;
+      if (candidateImage) {
+        performImageExtraction(candidateImage);
+        return;
+      }
       setErrorMsg('Please enter or paste the announcement text to continue.');
       return;
     }
@@ -249,7 +258,6 @@ export default function ExtractStudioScreen() {
     }
 
     setErrorMsg(null);
-    setShowPosterFallbackBtn(false);
     setIsExtracting(true);
     setIsVisionScanning(false);
 
@@ -263,14 +271,16 @@ export default function ExtractStudioScreen() {
         setQuotaInfo(response.quota);
       }
 
+      const candidateImage = fallbackImageUri || selectedImageUri;
+
       if (!response.events || response.events.length === 0) {
-        if (selectedImageUri) {
-          setErrorMsg('No event dates were detected in the text message. You can try scanning the attached poster graphic instead.');
-          setShowPosterFallbackBtn(true);
-        } else {
-          setErrorMsg('No event dates or deadlines detected. Please paste the complete announcement or add the event manually.');
-          setShowPosterFallbackBtn(false);
+        // Rule: Extract text first; if no info in text, automatically fall back to the image
+        if (candidateImage) {
+          await performImageExtraction(candidateImage, undefined, textToExtract);
+          return;
         }
+
+        setErrorMsg('No event dates or deadlines detected. Please paste the complete announcement or add the event manually.');
         setIsExtracting(false);
         return;
       }
@@ -291,8 +301,19 @@ export default function ExtractStudioScreen() {
 
       setPendingExtractions(enrichedEvents);
       setIsExtracting(false);
-      router.push('/(auth)/confirm');
+      setRawText('');
+      setSelectedImageUri(null);
+      setErrorMsg(null);
+      processedIntentKeyRef.current = '';
+      router.replace('/(auth)/confirm');
     } catch (err: any) {
+      const candidateImage = fallbackImageUri || selectedImageUri;
+      if (candidateImage && err.code !== 'QUOTA_EXCEEDED' && err.code !== 'UNAUTHORIZED') {
+        // If text extraction failed due to parsing/network issue, attempt image scan
+        await performImageExtraction(candidateImage, undefined, textToExtract);
+        return;
+      }
+
       setIsExtracting(false);
       if (err.code === 'QUOTA_EXCEEDED' || err.status === 429) {
         const serverQuota = err.quota || null;
@@ -317,19 +338,22 @@ export default function ExtractStudioScreen() {
 
   const handleExtract = () => {
     setErrorMsg(null);
-    setShowPosterFallbackBtn(false);
 
-    // If both text and image exist, respect user's selected mode (defaults to text to save tokens):
-    if (selectedImageUri && rawText.trim().length > 0) {
+    const hasText = rawText.trim().length > 0;
+    const hasImage = Boolean(selectedImageUri);
+
+    if (hasText && hasImage) {
+      // If user explicitly switched to "Attached Image" tab, scan the image
       if (preferredSource === 'image') {
-        performImageExtraction(selectedImageUri);
+        performImageExtraction(selectedImageUri!);
       } else {
-        performExtraction(rawText);
+        // Default (Message Text): extract text first, automatically fall back to image if no info found
+        performExtraction(rawText, selectedImageUri!);
       }
-    } else if (rawText.trim().length > 0) {
+    } else if (hasText) {
       performExtraction(rawText);
-    } else if (selectedImageUri) {
-      performImageExtraction(selectedImageUri);
+    } else if (hasImage) {
+      performImageExtraction(selectedImageUri!);
     } else {
       setErrorMsg('Please provide an announcement message or select an image to scan.');
     }
@@ -347,10 +371,16 @@ export default function ExtractStudioScreen() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         setSelectedImageUri(asset.uri);
-        if (asset.base64) {
-          performImageExtraction(asset.uri, asset.base64);
+        // If text is already entered, respect text-first extraction with image fallback
+        if (rawText.trim().length > 0) {
+          performExtraction(rawText, asset.uri);
         } else {
-          performImageExtraction(asset.uri);
+          // Image only: run Vision extraction directly
+          if (asset.base64) {
+            performImageExtraction(asset.uri, asset.base64);
+          } else {
+            performImageExtraction(asset.uri);
+          }
         }
       }
     } catch (err: any) {
@@ -364,11 +394,29 @@ export default function ExtractStudioScreen() {
     setErrorMsg(null);
   };
 
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     setRawText('');
     setSelectedImageUri(null);
     setErrorMsg(null);
-  };
+    processedIntentKeyRef.current = '';
+  }, []);
+
+  // Intercept Android hardware back button to clean up and return to home
+  useFocusEffect(
+    useCallback(() => {
+      const onHardwareBack = () => {
+        if (!isExtracting) {
+          handleClear();
+          router.replace('/(auth)');
+          return true;
+        }
+        return false;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+      return () => subscription.remove();
+    }, [isExtracting, handleClear, router])
+  );
 
   const isQuotaExhausted = !isAdmin && quotaInfo !== null && quotaInfo.remaining <= 0;
 
@@ -400,7 +448,10 @@ export default function ExtractStudioScreen() {
             <GlassCard contentStyle={styles.headerCard}>
               <TouchableOpacity
                 style={styles.backBtn}
-                onPress={() => router.push('/')}
+                onPress={() => {
+                  handleClear();
+                  router.replace('/(auth)');
+                }}
                 activeOpacity={0.7}
               >
                 <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
@@ -573,10 +624,7 @@ export default function ExtractStudioScreen() {
                 <View style={styles.sourceToggleRow}>
                   <TouchableOpacity
                     style={[styles.sourceToggleBtn, preferredSource === 'text' && styles.sourceToggleBtnActive]}
-                    onPress={() => {
-                      setPreferredSource('text');
-                      setShowPosterFallbackBtn(false);
-                    }}
+                    onPress={() => setPreferredSource('text')}
                     activeOpacity={0.8}
                   >
                     <Ionicons
@@ -591,10 +639,7 @@ export default function ExtractStudioScreen() {
 
                   <TouchableOpacity
                     style={[styles.sourceToggleBtn, preferredSource === 'image' && styles.sourceToggleBtnActive]}
-                    onPress={() => {
-                      setPreferredSource('image');
-                      setShowPosterFallbackBtn(false);
-                    }}
+                    onPress={() => setPreferredSource('image')}
                     activeOpacity={0.8}
                   >
                     <Ionicons
@@ -616,22 +661,6 @@ export default function ExtractStudioScreen() {
                 <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
                 <Text style={styles.errorText} numberOfLines={3}>{errorMsg}</Text>
               </View>
-            )}
-
-            {/* Optional Poster Fallback Button (Offered without double-burning quota) */}
-            {showPosterFallbackBtn && selectedImageUri && !isExtracting && (
-              <TouchableOpacity
-                style={styles.fallbackPosterBtn}
-                onPress={() => {
-                  setShowPosterFallbackBtn(false);
-                  setPreferredSource('image');
-                  performImageExtraction(selectedImageUri);
-                }}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="scan-outline" size={16} color="#FFFFFF" />
-                <Text style={styles.fallbackPosterBtnText}>Scan Attached Poster Graphic</Text>
-              </TouchableOpacity>
             )}
 
             {/* Primary Action Button or Quota Fallback */}

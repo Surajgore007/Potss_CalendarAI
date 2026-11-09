@@ -9,6 +9,45 @@ export function setActiveNotificationUser(userId: string | null) {
   currentActiveUserId = userId;
 }
 
+/**
+ * Multi-Tenancy Guard for Foreground Notification Presentation:
+ * Suppresses sounds and visual banners if notification belongs to another account or user is logged out.
+ */
+export async function handleNotificationPresentation(notif: any) {
+  try {
+    const notifUserId = notif?.request?.content?.data?.userId;
+    if (notifUserId && currentActiveUserId && notifUserId !== currentActiveUserId) {
+      console.warn(
+        `[NotificationService] Suppressed notification: Owned by ${notifUserId}, active user is ${currentActiveUserId}`
+      );
+      return {
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      };
+    }
+    if (!currentActiveUserId) {
+      // Logged out state: suppress all notifications
+      return {
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      };
+    }
+  } catch {
+    // Ignore check error and fallback to standard behavior
+  }
+
+  return {
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  };
+}
+
 // Lazy loader for notifications on native platforms
 let notificationsModule: typeof import('expo-notifications') | null = null;
 function getNotifications(): typeof import('expo-notifications') | null {
@@ -17,42 +56,7 @@ function getNotifications(): typeof import('expo-notifications') | null {
     try {
       notificationsModule = require('expo-notifications');
       notificationsModule?.setNotificationHandler({
-        handleNotification: async (notif) => {
-          // MULTI-TENANCY GUARD:
-          // If notification was scheduled by another user who logged out or switched, suppress all alerts
-          try {
-            const notifUserId = notif?.request?.content?.data?.userId;
-            if (notifUserId && currentActiveUserId && notifUserId !== currentActiveUserId) {
-              console.warn(
-                `[NotificationService] Suppressed notification: Owned by ${notifUserId}, active user is ${currentActiveUserId}`
-              );
-              return {
-                shouldPlaySound: false,
-                shouldSetBadge: false,
-                shouldShowBanner: false,
-                shouldShowList: false,
-              };
-            }
-            if (!currentActiveUserId) {
-              // Logged out state: suppress all notifications
-              return {
-                shouldPlaySound: false,
-                shouldSetBadge: false,
-                shouldShowBanner: false,
-                shouldShowList: false,
-              };
-            }
-          } catch {
-            // Ignore check error and fallback to standard behavior
-          }
-
-          return {
-            shouldPlaySound: true,
-            shouldSetBadge: true,
-            shouldShowBanner: true,
-            shouldShowList: true,
-          };
-        },
+        handleNotification: handleNotificationPresentation,
       });
 
       if (Platform.OS === 'android') {

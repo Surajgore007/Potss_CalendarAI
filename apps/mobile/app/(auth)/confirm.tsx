@@ -54,13 +54,13 @@ export default function ConfirmScreen() {
             style: 'destructive',
             onPress: () => {
               setPendingExtractions([]);
-              router.back();
+              router.replace('/(auth)');
             },
           },
         ]
       );
     } else {
-      router.back();
+      router.replace('/(auth)');
     }
   }, [pendingExtractions.length, router, setPendingExtractions]);
 
@@ -92,7 +92,7 @@ export default function ConfirmScreen() {
     setPendingExtractions((prev) => {
       const next = prev.filter((_, i) => i !== index);
       if (next.length === 0) {
-        router.back();
+        router.replace('/(auth)');
       }
       return next;
     });
